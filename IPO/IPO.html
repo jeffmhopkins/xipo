@@ -211,6 +211,7 @@
         <h2 style="margin:0">Your holdings</h2>
         <div class="row">
           <button class="btn sm" id="quickAddBtn">+ Owned shares</button>
+          <button class="btn sm sec" id="pasteImportBtn">⎘ Paste import</button>
           <button class="btn sm sec" id="addGrantBtn">+ Grant</button>
         </div>
       </div>
@@ -425,6 +426,24 @@
   </div>
 </div>
 
+<!-- Paste-import modal -->
+<div class="modal-bg" id="pasteModal">
+  <div class="modal">
+    <h2>Paste import</h2>
+    <p class="small muted" style="margin-top:0">Paste rows copied from your equity statement — either the <b>shares/holdings</b> table (Security Number, Quantity, Cost Basis…) or the <b>option grants</b> table (Grant Name, Options Available For Exercise…). Both formats are auto-detected. Header row optional. Data stays in this browser only.</p>
+    <textarea id="pasteText" rows="7" placeholder="Paste here (Ctrl/Cmd-V)…" style="width:100%; background:var(--bg2); border:1px solid var(--line); color:var(--text); border-radius:10px; padding:10px 12px; font:13px/1.4 ui-monospace,Menlo,Consolas,monospace; resize:vertical"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sec sm" id="parsePasteBtn">Preview</button>
+      <label class="row small" style="gap:6px; margin-left:auto"><input type="checkbox" id="pasteReplace" style="width:auto" checked> Replace matching lots (by ID)</label>
+    </div>
+    <div id="pastePreview" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:16px; justify-content:flex-end">
+      <button class="btn sec" id="cancelPasteBtn">Cancel</button>
+      <button class="btn" id="importPasteBtn" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <div class="update-banner" id="updateBanner">
   <span>A new version is available.</span>
@@ -434,7 +453,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = 'v1.2.0-2026.06.12';
+const APP_VERSION = 'v1.3.0-2026.06.12';
 
 /* ---------------- Defaults & state ---------------- */
 const DEFAULT_ASSUME = {
@@ -503,7 +522,7 @@ function isOption(t){ return t==='ISO' || t==='NSO'; }
 function isOwned(t){ return t==='OWNED'; }
 
 function vestedFraction(g, asOf=new Date()){
-  if(isOwned(g.type)) return 1;            // owned shares are fully held
+  if(isOwned(g.type) || g.heldVested) return 1;   // owned shares / exercisable options
   const start = new Date(g.date+'T00:00:00');
   if(isNaN(start)) return 0;
   const totalM = Math.max(1, (g.vy||0)*12);
@@ -518,7 +537,7 @@ function vestedFraction(g, asOf=new Date()){
   return eff/totalM;
 }
 function nextVestDate(g){
-  if(isOwned(g.type)) return null;
+  if(isOwned(g.type) || g.heldVested) return null;
   const start = new Date(g.date+'T00:00:00');
   if(isNaN(start)) return null;
   const totalM=(g.vy||0)*12, cliffM=(g.cliff||0)*12, freqM=Math.max(1,g.freq||1);
@@ -716,7 +735,7 @@ function renderVesting(){
     statCard('Unvested', fmtNum(totalSh-vestedSh)+' sh', fmtBig(pfa.net-pf.net)+' net')
   ].join('');
   const el=$('#vestList');
-  const vesting = state.grants.filter(g=>!isOwned(g.type));
+  const vesting = state.grants.filter(g=>!isOwned(g.type) && !g.heldVested);
   if(!state.grants.length){ el.innerHTML=emptyGrants(); return; }
   if(!vesting.length){ el.innerHTML='<p class="muted small">No grants with a vesting schedule. Owned shares are held outright (100% vested).</p>'; return; }
   el.innerHTML = vesting.map(g=>{
@@ -920,6 +939,124 @@ $('#saveGrantBtn').onclick = ()=>{
 $('#deleteGrantBtn').onclick = ()=>{
   const id=$('#g_id').value; state.grants=state.grants.filter(x=>x.id!==id);
   LS.set('grants', state.grants); closeGrantModal(); renderAll(); toast('Deleted');
+};
+
+/* ---------------- Paste import (equity statements) ---------------- */
+const MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+function toNum(s){ if(s==null) return NaN; const m=String(s).replace(/,/g,'').match(/-?\d+(?:\.\d+)?/); return m?parseFloat(m[0]):NaN; }
+function dmyToISO(s){ // "15-May-2023"
+  const m=String(s).match(/(\d{1,2})-([A-Za-z]{3,})-(\d{4})/); if(!m) return '';
+  const mo=MONTHS[m[2].slice(0,3).toLowerCase()]; if(!mo) return '';
+  return `${m[3]}-${String(mo).padStart(2,'0')}-${String(+m[1]).padStart(2,'0')}`;
+}
+function mdyToISO(s){ // "04/20/2021"
+  const m=String(s).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(!m) return '';
+  return `${m[3]}-${String(+m[1]).padStart(2,'0')}-${String(+m[2]).padStart(2,'0')}`;
+}
+// Parse one shares/holdings row -> OWNED lot
+function parseShareRow(line, cells){
+  const secM=line.match(/\b([A-Z]{2,6}-\d+)\b/);
+  const dateM=line.match(/(\d{1,2}-[A-Za-z]{3,}-\d{4})/); if(!dateM) return null;
+  const dollars=[...line.matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+  // Quantity = first number after the date (tab cells preferred)
+  let qty=NaN;
+  const di=cells.findIndex(c=>/\d{1,2}-[A-Za-z]{3,}-\d{4}/.test(c));
+  if(di>=0 && cells[di+1]!=null) qty=toNum(cells[di+1]);
+  if(!(qty>0)){ const after=line.slice(dateM.index+dateM[0].length); const qm=after.match(/([\d,]+(?:\.\d+)?)/); qty=qm?toNum(qm[1]):NaN; }
+  if(!(qty>0) || !dollars.length) return null;
+  const totalCost=dollars[0];
+  // Issue reason: cell[2] if tabbed, else text between class designation and date
+  let reason = (cells.length>3 && cells[2]) ? cells[2] : '';
+  if(!reason){ let b=line.slice(0,dateM.index); if(secM) b=b.replace(secM[1],''); reason=b.replace(/Class\s+\S+/i,'').replace(/\s+/g,' ').trim(); }
+  return { kind:'share', ref:secM?secM[1]:'', reason, shares:qty, basis: +(totalCost/qty).toFixed(4), date:dmyToISO(dateM[0]) };
+}
+// Parse one option-grant row -> exercisable ISO/NSO lot
+function parseOptionRow(line, cells){
+  const dateM=line.match(/(\d{1,2}\/\d{1,2}\/\d{4})/); if(!dateM) return null;
+  const dollars=[...line.matchAll(/\$\s?([\d,]+(?:\.\d+)?)/g)].map(m=>parseFloat(m[1].replace(/,/g,'')));
+  const type = /\bNSO\b/i.test(line) ? 'NSO' : 'ISO';
+  const termM=line.match(/(\d+)\s*yr/i);
+  // Strike = grant price. With tabs it's cells[2]; otherwise the grant-price $ (dollars[1] because the name repeats it as dollars[0]).
+  let strike = (cells.length>=3 && /\$/.test(cells[2])) ? toNum(cells[2]) : (dollars.length>1?dollars[1]:dollars[0]);
+  // Options available for exercise: tab column index 4; fallback to regex.
+  let granted=NaN, avail=NaN, grantNo='';
+  if(cells.length>=5){ grantNo=(cells[1]||'').match(/\d+/)?.[0]||''; granted=toNum(cells[3]); avail=toNum(cells[4]); }
+  if(!(avail>=0)){ // regex fallback: integers after the grant price
+    const afterPrice=line.slice((line.indexOf('$',0)));
+    const ints=[...afterPrice.matchAll(/\b(\d{1,3}(?:,\d{3})*|\d+)\b/g)].map(m=>toNum(m[1])).filter(n=>Number.isFinite(n));
+    // ints ~ [strikeDigits?, granted, available, ...]; take the two plausible share counts
+    if(ints.length>=2){ granted=ints[ints.length>=4?1:0]; avail=ints[ints.length>=4?2:1]; }
+    if(!grantNo){ const gm=line.match(/\b(\d{5,8})\b/); grantNo=gm?gm[1]:''; }
+  }
+  if(!(avail>0)) return null; // nothing exercisable -> skip
+  return { kind:'option', ref:grantNo, type, shares:avail, granted, strike: Number.isFinite(strike)?strike:0,
+    date:mdyToISO(dateM[0]), vy: termM?+termM[1]:4 };
+}
+function parsePastedAssets(text){
+  const out=[]; let skipped=0;
+  for(const raw of text.split(/\r?\n/)){
+    const line=raw.replace(/\s+$/,''); const t=line.trim(); if(!t) continue;
+    const low=t.toLowerCase();
+    if(!/\$|\d-[A-Za-z]{3,}-\d{4}|\d{1,2}\/\d{1,2}\/\d{4}/.test(t) &&
+       /(security number|grant name|grant number|quantity|cost basis|options granted|issue reason)/.test(low)) continue; // header
+    const cells=line.split('\t').map(c=>c.trim());
+    let r=null;
+    if(/^\d{1,2}\/\d{1,2}\/\d{4}/.test(t)) r=parseOptionRow(line, cells);
+    else if(/^[A-Z]{2,6}-\d+/.test(t))     r=parseShareRow(line, cells);
+    else if(/\d{1,2}\/\d{1,2}\/\d{4}/.test(t) && /(ISO|NSO)/i.test(t)) r=parseOptionRow(line, cells);
+    else if(/\d{1,2}-[A-Za-z]{3,}-\d{4}/.test(t)) r=parseShareRow(line, cells);
+    if(r) out.push(r); else if(/\$|CSC-|\d{5,}/.test(t)) skipped++;
+  }
+  return { rows:out, skipped };
+}
+let pasteParsed=[];
+function rowToGrant(r){
+  if(r.kind==='share'){
+    return { type:'OWNED', label:(r.reason||'Owned shares')+(r.ref?' · '+r.ref:''), shares:r.shares,
+      basis:r.basis, strike:0, date:r.date||state.assume.ipoDate, vy:0,cliff:0,freq:1, ref:r.ref, preSplit:false };
+  }
+  return { type:r.type, label:`${r.type} $${fmtUSD(r.strike,2).replace('$','')}`+(r.ref?' · #'+r.ref:''),
+    shares:r.shares, strike:r.strike, basis:0, date:r.date||state.assume.ipoDate,
+    vy:r.vy||4, cliff:r.vy>=6?2:1, freq:1, heldVested:true, ref:r.ref, preSplit:false };
+}
+function renderPastePreview(){
+  const el=$('#pastePreview');
+  if(!pasteParsed.length){ el.innerHTML='<p class="small muted">Nothing recognized yet — paste rows and hit Preview.</p>'; $('#importPasteBtn').disabled=true; return; }
+  const p=currentPrice();
+  const shares=pasteParsed.filter(r=>r.kind==='share'), opts=pasteParsed.filter(r=>r.kind==='option');
+  const shTot=shares.reduce((s,r)=>s+r.shares,0), opTot=opts.reduce((s,r)=>s+r.shares,0);
+  let html='';
+  if(shares.length){
+    html+=`<h3 style="margin:6px 0 4px;font-size:13px">Owned share lots — ${shares.length} (${fmtNum(shTot)} sh)</h3><div style="overflow-x:auto"><table><thead><tr><th>Lot</th><th class="num">Shares</th><th class="num">Basis/sh</th><th>Date</th></tr></thead><tbody>`;
+    html+=shares.map(r=>`<tr><td>${esc(r.reason||'—')} <span class="small muted">${esc(r.ref)}</span></td><td class="num">${fmtNum(r.shares)}</td><td class="num">${fmtUSD(r.basis,2)}</td><td>${r.date||'—'}</td></tr>`).join('');
+    html+=`</tbody></table></div>`;
+  }
+  if(opts.length){
+    html+=`<h3 style="margin:12px 0 4px;font-size:13px">Exercisable options — ${opts.length} (${fmtNum(opTot)} opts)</h3><div style="overflow-x:auto"><table><thead><tr><th>Grant</th><th class="num">Exercisable</th><th class="num">Strike</th><th class="num">Intrinsic @ ${fmtUSD(p,0)}</th></tr></thead><tbody>`;
+    html+=opts.map(r=>`<tr><td>${r.type} <span class="small muted">#${esc(r.ref)}</span></td><td class="num">${fmtNum(r.shares)}</td><td class="num">${fmtUSD(r.strike,2)}</td><td class="num">${fmtBig(r.shares*Math.max(0,p-r.strike))}</td></tr>`).join('');
+    html+=`</tbody></table></div>`;
+  }
+  el.innerHTML=html;
+  $('#importPasteBtn').disabled=false; $('#importPasteBtn').textContent=`Import ${pasteParsed.length} lot(s)`;
+}
+$('#pasteImportBtn').onclick = ()=>{ $('#pasteText').value=''; pasteParsed=[]; renderPastePreview(); $('#pasteModal').classList.add('open'); setTimeout(()=>$('#pasteText').focus(),50); };
+$('#cancelPasteBtn').onclick = ()=>$('#pasteModal').classList.remove('open');
+$('#pasteModal').addEventListener('click',e=>{ if(e.target===$('#pasteModal')) $('#pasteModal').classList.remove('open'); });
+$('#parsePasteBtn').onclick = ()=>{
+  const res=parsePastedAssets($('#pasteText').value);
+  pasteParsed=res.rows; renderPastePreview();
+  toast(res.rows.length? `Recognized ${res.rows.length} lot(s)`+(res.skipped?` · ${res.skipped} skipped`:'') : 'No rows recognized — check the format');
+};
+$('#importPasteBtn').onclick = ()=>{
+  if(!pasteParsed.length) return;
+  const replace=$('#pasteReplace').checked; let added=0, updated=0;
+  for(const r of pasteParsed){
+    const g=rowToGrant(r); g.id=newId();
+    if(replace && r.ref){ const i=state.grants.findIndex(x=>x.ref===r.ref); if(i>=0){ g.id=state.grants[i].id; state.grants[i]=g; updated++; continue; } }
+    state.grants.push(g); added++;
+  }
+  LS.set('grants', state.grants); $('#pasteModal').classList.remove('open'); renderAll();
+  toast(`Imported ${added} new`+(updated?`, updated ${updated}`:'')+' lot(s)');
 };
 
 /* ---------------- What-if controls ---------------- */
