@@ -148,6 +148,14 @@
   .hide { display:none !important; }
   .empty { text-align:center; color:var(--muted); padding:24px 8px; }
   ul.tight { margin:6px 0; padding-left:18px; } ul.tight li{ margin:3px 0; }
+  .chart-wrap { width:100%; background:var(--bg2); border:1px solid var(--line); border-radius:12px; padding:8px; }
+  .chart-wrap svg { width:100%; height:140px; display:block; }
+  .rangebtns button { flex:0 0 auto; border:1px solid var(--line); background:var(--card2); color:var(--muted); padding:5px 11px; border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer; }
+  .rangebtns button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .quote-big { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; }
+  .quote-big .px { font-size:34px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .quote-big .ch { font-size:15px; font-weight:700; }
+  a.keylink { color:var(--accent2); font-weight:600; }
 </style>
 </head>
 <body>
@@ -271,24 +279,29 @@
   <section data-panel="market" hidden>
     <div class="card">
       <div class="row" style="justify-content:space-between">
-        <h2 style="margin:0">Live market</h2>
+        <h2 style="margin:0">SPCX <span class="tag">SpaceX</span></h2>
         <button class="btn sm sec" id="refreshMktBtn">↻ Refresh</button>
       </div>
-      <div id="mktList" style="margin-top:12px"></div>
+      <div id="mktQuote" style="margin-top:10px"></div>
+      <div class="row rangebtns" id="chartRanges" style="gap:6px; margin:12px 0 8px"></div>
+      <div id="mktChart"></div>
       <div class="small muted" id="mktUpdated" style="margin-top:8px"></div>
     </div>
     <div class="card">
-      <h2>Data source</h2>
+      <h2>Data source &amp; API key</h2>
       <label class="f">Live-data mode</label>
       <select id="dataMode">
         <option value="auto">Auto — public proxy (keyless), then Finnhub key</option>
-        <option value="finnhub">Finnhub key only (most reliable)</option>
+        <option value="finnhub">Finnhub key only (most reliable quote)</option>
         <option value="off">Off — manual entry only</option>
       </select>
-      <label class="f">Finnhub API key (optional — stored only in this browser)</label>
-      <input id="finnhubKey" placeholder="paste free key from finnhub.io" autocomplete="off">
-      <p class="small muted">Public mode pulls quotes from Yahoo Finance via free CORS proxies — no key or signup, but proxies can be flaky. A free Finnhub key is the reliable option. SPCX shows the live listing once it trades; until then it reads "not trading yet."</p>
-      <div class="row"><button class="btn sm" id="saveDataBtn">Save</button> <span class="small muted" id="dataSaved"></span></div>
+      <label class="f">Finnhub API key (optional)</label>
+      <div class="row" style="gap:8px">
+        <input id="finnhubKey" placeholder="paste your free key" autocomplete="off" style="flex:1">
+        <button class="btn sm" id="saveDataBtn">Save</button>
+      </div>
+      <div class="small muted" id="dataSaved" style="margin-top:6px"></div>
+      <p class="small muted">Get a free key at <a class="keylink" href="https://finnhub.io/register" target="_blank" rel="noopener">finnhub.io/register</a> — it's stored only in this browser and never sent anywhere but Finnhub. A key gives a more reliable live <i>quote</i>; the <b>intraday chart is keyless</b> (Yahoo via public proxy) and doesn't need one. SPCX reads "not trading yet" until the listing opens.</p>
     </div>
     <div class="card">
       <h2>Tender / valuation history <span class="tag">seed</span></h2>
@@ -421,7 +434,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = 'v1.1.0-2026.06.12';
+const APP_VERSION = 'v1.2.0-2026.06.12';
 
 /* ---------------- Defaults & state ---------------- */
 const DEFAULT_ASSUME = {
@@ -440,13 +453,14 @@ const TENDERS = [
   { date: '2025-12', price: 421/5, val: 8.0e11, note: 'tender (pre-split, ÷5 shown)' },
   { date: '2026-06', price: 135,   val: 1.77e12, note: 'IPO price (post-split)' }
 ];
-const MARKET_SYMBOLS = [
-  { sym: 'SPCX', name: 'SpaceX', primary: true },
-  { sym: 'RKLB', name: 'Rocket Lab' },
-  { sym: 'ASTS', name: 'AST SpaceMobile' },
-  { sym: 'LUNR', name: 'Intuitive Machines' },
-  { sym: 'SPY',  name: 'S&P 500 ETF' }
-];
+const SPCX = 'SPCX';
+const RANGES = {
+  '1D': { range:'1d',  interval:'5m'  },
+  '5D': { range:'5d',  interval:'30m' },
+  '1M': { range:'1mo', interval:'1d'  },
+  '6M': { range:'6mo', interval:'1d'  },
+  '1Y': { range:'1y',  interval:'1d'  }
+};
 
 const LS = {
   get(k, d){ try { const v = localStorage.getItem('spcx.'+k); return v==null?d:JSON.parse(v); } catch { return d; } },
@@ -460,6 +474,8 @@ let state = {
   scenarios: LS.get('scenarios', []),
   settings: Object.assign({ dataMode:'auto', finnhubKey:'' }, LS.get('settings', {})),
   quotes: LS.get('quotes', {}),
+  chartRange: LS.get('chartRange', '1D'),
+  series: [],   // intraday/historical points for the current range (in-memory)
   wi: { mode:'price', price: null, val: null }
 };
 
@@ -744,24 +760,49 @@ function renderTaxes(){
     : '<p class="muted small">No ISOs — no AMT bargain element. Add ISO grants to see AMT exposure.</p>';
 }
 
+function sparkSVG(series){
+  if(!series || series.length<2) return '';
+  const W=600, H=140, pad=6;
+  const xs=series.map(p=>p.c);
+  let min=Math.min(...xs), max=Math.max(...xs);
+  if(min===max){ min-=1; max+=1; }
+  const n=series.length;
+  const X=i=> pad + i*(W-2*pad)/(n-1);
+  const Y=c=> pad + (1-(c-min)/(max-min))*(H-2*pad);
+  let d=''; series.forEach((p,i)=>{ d+=(i?'L':'M')+X(i).toFixed(1)+' '+Y(p.c).toFixed(1)+' '; });
+  const area = d + `L${X(n-1).toFixed(1)} ${H-pad} L${X(0).toFixed(1)} ${H-pad} Z`;
+  const up = series[n-1].c >= series[0].c;
+  const col = up ? 'var(--green)' : 'var(--red)';
+  const fill = up ? 'rgba(46,204,113,.14)' : 'rgba(255,90,106,.14)';
+  return `<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="SPCX price chart">
+    <path d="${area}" fill="${fill}" stroke="none"/>
+    <path d="${d.trim()}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg></div>`;
+}
+
+function renderRangeButtons(){
+  $('#chartRanges').innerHTML = Object.keys(RANGES).map(r=>
+    `<button data-range="${r}" class="${r===state.chartRange?'active':''}">${r}</button>`).join('');
+}
+
 function renderMarket(){
-  const el=$('#mktList');
-  el.innerHTML = MARKET_SYMBOLS.map(m=>{
-    const q=state.quotes[m.sym];
-    let right;
-    if(q && q.price>0){
-      const cls = q.chg>0?'up':q.chg<0?'down':'flat';
-      right = `<div style="text-align:right"><div style="font-weight:700">${fmtUSD(q.price,2)}</div><div class="small ${cls}">${pct(q.chgPct)} ${q.stale?'· stale':''}</div></div>`;
-    } else if(m.primary){
-      right = `<div class="small muted">not trading yet</div>`;
-    } else {
-      right = `<div class="small muted">—</div>`;
-    }
-    return `<div class="stat" style="margin-bottom:8px"><div class="row" style="justify-content:space-between">
-      <div><b>${m.sym}</b> ${m.primary?'<span class="tag">SpaceX</span>':''}<div class="small muted">${m.name}</div></div>${right}</div></div>`;
-  }).join('');
-  const last = Object.values(state.quotes).map(q=>q&&q.t).filter(Boolean).sort().pop();
-  $('#mktUpdated').textContent = last ? 'Last updated '+timeAgo(last)+' · source: '+(state.quotes['SPCX']?.source||'—') : 'No quotes fetched yet.';
+  const q=state.quotes[SPCX];
+  // big quote
+  if(q && q.price>0){
+    const cls = q.chg>0?'up':q.chg<0?'down':'flat';
+    const arrow = q.chg>0?'▲':q.chg<0?'▼':'•';
+    $('#mktQuote').innerHTML = `<div class="quote-big">
+      <span class="px">${fmtUSD(q.price,2)}</span>
+      <span class="ch ${cls}">${arrow} ${fmtUSD(Math.abs(q.chg),2)} (${pct(q.chgPct)})</span>
+      ${q.stale?'<span class="badge-src">· last-known</span>':''}</div>`;
+  } else {
+    $('#mktQuote').innerHTML = `<div class="small muted">Not trading yet — SPCX is provisioned but has no live price. Your assumed price (${fmtUSD(state.assume.price,2)}) is used until it lists.</div>`;
+  }
+  // chart
+  renderRangeButtons();
+  const chart = sparkSVG(state.series);
+  $('#mktChart').innerHTML = chart || `<div class="chart-wrap"><div class="empty small" style="padding:42px 8px">No chart data yet${state.settings.dataMode==='finnhub'?' — switch to Auto for the keyless chart':''}.<br>Hit ↻ Refresh once SPCX is trading.</div></div>`;
+  $('#mktUpdated').textContent = q && q.t ? `Last updated ${timeAgo(q.t)} · ${state.chartRange} · source: ${q.source||'—'}` : 'No quote fetched yet — hit ↻ Refresh.';
   // tender table
   $('#tenderTable').innerHTML = `<table><thead><tr><th>Date</th><th class="num">Price/sh</th><th class="num">Valuation</th><th>Note</th></tr></thead><tbody>${
     TENDERS.map(t=>`<tr><td>${t.date}</td><td class="num">${fmtUSD(t.price,2)}</td><td class="num">${fmtBig(t.val)}</td><td class="small muted">${t.note}</td></tr>`).join('')
@@ -922,24 +963,31 @@ $('#importFile').onchange = (e)=>{ const f=e.target.files[0]; if(!f) return; con
 $('#wipeBtn').onclick = ()=>{ if(confirm('Erase ALL your data on this device? Cannot be undone.')){ ['grants','assume','scenarios','settings','quotes'].forEach(LS.del); location.reload(); } };
 
 /* ---------------- Market data (tiered) ---------------- */
-const YQ = s => `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}`;
+const YQ = (s, range, interval) => `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}?range=${range}&interval=${interval}`;
 const PROXIES = [
-  { name:'allorigins', url:s=>`https://api.allorigins.win/get?url=${encodeURIComponent(YQ(s))}`, parse: async r=>{ const w=await r.json(); return JSON.parse(w.contents); } },
-  { name:'codetabs', url:s=>`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(YQ(s))}`, parse: r=>r.json() }
+  { name:'allorigins', url:u=>`https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, parse: async r=>{ const w=await r.json(); return JSON.parse(w.contents); } },
+  { name:'codetabs', url:u=>`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`, parse: r=>r.json() }
 ];
 async function fetchTimeout(url, ms=8000, opts={}){
   const c=new AbortController(); const t=setTimeout(()=>c.abort(), ms);
   try { return await fetch(url, {...opts, signal:c.signal}); } finally { clearTimeout(t); }
 }
 function parseYahoo(data, sym){
-  const m = data?.chart?.result?.[0]?.meta;
+  const res = data?.chart?.result?.[0];
+  const m = res?.meta;
   if(!m || m.regularMarketPrice==null) throw new Error('no price');
   const prev = m.chartPreviousClose ?? m.previousClose ?? m.regularMarketPrice;
-  return { sym, price:m.regularMarketPrice, prev, chg:m.regularMarketPrice-prev, chgPct: prev? (m.regularMarketPrice-prev)/prev*100:0, t:Date.now(), source:'Yahoo' };
+  // Intraday/historical series rides along on the same response — keyless plot.
+  const ts = res?.timestamp || [];
+  const closes = res?.indicators?.quote?.[0]?.close || [];
+  const series = ts.map((t,i)=>({ t:t*1000, c:closes[i] })).filter(p=>p.c!=null);
+  return { sym, price:m.regularMarketPrice, prev, chg:m.regularMarketPrice-prev,
+    chgPct: prev? (m.regularMarketPrice-prev)/prev*100:0, t:Date.now(), source:'Yahoo', series };
 }
-async function viaProxies(sym){
+async function viaProxies(sym, range, interval){
+  const target = YQ(sym, range, interval);
   for(const px of PROXIES){
-    try { const r=await fetchTimeout(px.url(sym)); if(!r.ok) continue; const d=await px.parse(r); return parseYahoo(d, sym); }
+    try { const r=await fetchTimeout(px.url(target)); if(!r.ok) continue; const d=await px.parse(r); return parseYahoo(d, sym); }
     catch(_){ /* try next */ }
   }
   throw new Error('all proxies failed');
@@ -949,12 +997,14 @@ async function viaFinnhub(sym){
   const r=await fetchTimeout(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${key}`);
   if(r.status===401) throw new Error('bad key'); if(r.status===429) throw new Error('rate limited'); if(!r.ok) throw new Error('finnhub '+r.status);
   const q=await r.json(); if(!q.t||q.c===0) throw new Error('no data');
-  return { sym, price:q.c, prev:q.pc, chg:q.d, chgPct:q.dp, t:Date.now(), source:'Finnhub' };
+  return { sym, price:q.c, prev:q.pc, chg:q.d, chgPct:q.dp, t:Date.now(), source:'Finnhub', series:[] };
 }
 async function fetchQuote(sym){
   const mode=state.settings.dataMode;
   if(mode==='off') throw new Error('off');
-  const order = mode==='finnhub' ? [viaFinnhub] : [viaProxies, viaFinnhub];
+  const {range, interval} = RANGES[state.chartRange] || RANGES['1D'];
+  // Public proxy first (gives the chart series); Finnhub as quote fallback.
+  const order = mode==='finnhub' ? [viaFinnhub] : [()=>viaProxies(sym,range,interval), viaFinnhub];
   let lastErr;
   for(const fn of order){ try { return await fn(sym); } catch(e){ lastErr=e; } }
   throw lastErr||new Error('failed');
@@ -964,18 +1014,25 @@ async function refreshMarket(showToast){
   if(state.settings.dataMode==='off'){ if(showToast) toast('Live data is off (enable in Market)'); return; }
   if(refreshing) return; refreshing=true;
   const btn=$('#refreshMktBtn'); if(btn) btn.textContent='↻ …';
-  let ok=0, fail=0;
-  await Promise.all(MARKET_SYMBOLS.map(async m=>{
-    try { const q=await fetchQuote(m.sym); state.quotes[m.sym]=q; ok++; }
-    catch(e){ const cached=state.quotes[m.sym]; if(cached){ cached.stale=true; } fail++; }
-  }));
+  let ok=false;
+  try {
+    const q=await fetchQuote(SPCX);
+    if(q.series && q.series.length) state.series = q.series;
+    delete q.series;                 // keep persisted quote small
+    state.quotes[SPCX]=q; ok=true;
+  } catch(e){ const c=state.quotes[SPCX]; if(c) c.stale=true; }
   LS.set('quotes', state.quotes);
   refreshing=false; if(btn) btn.textContent='↻ Refresh';
   renderHeaderTicker(); if(!$('section[data-panel=market]').hidden) renderMarket(); if(currentTab()==='dashboard') renderDashboard();
-  if(showToast) toast(ok? `Updated ${ok} quote(s)`+(fail?` · ${fail} failed`:'') : 'Quotes unavailable — using last-known');
+  if(showToast) toast(ok? 'Updated SPCX' : 'SPCX unavailable — using last-known');
 }
 $('#refreshMktBtn').onclick = ()=>refreshMarket(true);
 $('#hdrTicker').onclick = ()=>refreshMarket(true);
+$('#chartRanges').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  state.chartRange=b.dataset.range; LS.set('chartRange', state.chartRange);
+  renderRangeButtons(); refreshMarket(true);
+});
 $('#saveDataBtn').onclick = ()=>{
   state.settings.dataMode=$('#dataMode').value; state.settings.finnhubKey=$('#finnhubKey').value.trim();
   LS.set('settings', state.settings); $('#dataSaved').textContent='Saved'; setTimeout(()=>$('#dataSaved').textContent='',1500);
