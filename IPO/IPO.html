@@ -118,7 +118,7 @@
   .muted { color: var(--muted); }
   .small { font-size:12px; }
   .tag { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:6px; background:var(--card2); border:1px solid var(--line); color:var(--muted); letter-spacing:.4px; }
-  .tag.rsu{ color:#7fd1ff;border-color:#27506e;} .tag.iso{ color:#9b8cff;border-color:#403a6e;} .tag.nso{ color:#ffc46b;border-color:#6e5a2a;} .tag.espp{ color:#7fffd4;border-color:#2a6e5a;}
+  .tag.rsu{ color:#7fd1ff;border-color:#27506e;} .tag.iso{ color:#9b8cff;border-color:#403a6e;} .tag.nso{ color:#ffc46b;border-color:#6e5a2a;} .tag.espp{ color:#7fffd4;border-color:#2a6e5a;} .tag.owned{ color:#2ecc71;border-color:#2a6e3a;}
 
   .bar { height:8px; background: var(--bg2); border-radius:999px; overflow:hidden; }
   .bar > span { display:block; height:100%; background: linear-gradient(90deg,var(--accent),var(--accent2)); }
@@ -200,8 +200,11 @@
   <section data-panel="holdings" hidden>
     <div class="card">
       <div class="row" style="justify-content:space-between">
-        <h2 style="margin:0">Your grants</h2>
-        <button class="btn sm" id="addGrantBtn">+ Add grant</button>
+        <h2 style="margin:0">Your holdings</h2>
+        <div class="row">
+          <button class="btn sm" id="quickAddBtn">+ Owned shares</button>
+          <button class="btn sm sec" id="addGrantBtn">+ Grant</button>
+        </div>
       </div>
       <div id="grantList" style="margin-top:12px"></div>
     </div>
@@ -365,34 +368,38 @@
       <div>
         <label class="f">Type</label>
         <select id="g_type">
+          <option value="OWNED">Owned / vested shares</option>
           <option value="RSU">RSU</option>
           <option value="ISO">ISO (incentive option)</option>
           <option value="NSO">NSO (non-qual option)</option>
           <option value="ESPP">ESPP shares</option>
         </select>
       </div>
-      <div><label class="f"># Shares / options</label><input id="g_shares" type="number" step="1" inputmode="numeric"></div>
+      <div><label class="f" id="g_sharesLbl"># Shares</label><input id="g_shares" type="number" step="1" inputmode="numeric"></div>
       <div id="g_strikeWrap"><label class="f">Strike price ($)</label><input id="g_strike" type="number" step="0.0001"></div>
-      <div><label class="f">Grant date</label><input id="g_date" type="date"></div>
-      <div><label class="f">Vesting length (years)</label><input id="g_vy" type="number" step="0.5"></div>
-      <div><label class="f">Cliff (years)</label><input id="g_cliff" type="number" step="0.5"></div>
-      <div>
-        <label class="f">Vest frequency</label>
-        <select id="g_freq">
-          <option value="1">Monthly</option>
-          <option value="3">Quarterly</option>
-          <option value="6">Semi-annual</option>
-          <option value="12">Annual</option>
-        </select>
-      </div>
-      <div>
-        <label class="f">Preset</label>
-        <select id="g_preset">
-          <option value="">— pick a SpaceX preset —</option>
-          <option value="rsu3">RSU: 3yr, 1yr cliff, annual</option>
-          <option value="rsu5">RSU: 5yr, 1yr cliff, semi-annual</option>
-          <option value="nso6">NSO: 6yr, 2yr cliff, monthly</option>
-        </select>
+      <div id="g_basisWrap"><label class="f">Cost basis ($/sh)</label><input id="g_basis" type="number" step="0.0001" placeholder="price you paid / vest FMV"></div>
+      <div><label class="f" id="g_dateLbl">Grant date</label><input id="g_date" type="date"></div>
+      <div id="g_vestWrap" style="display:contents">
+        <div><label class="f">Vesting length (years)</label><input id="g_vy" type="number" step="0.5"></div>
+        <div><label class="f">Cliff (years)</label><input id="g_cliff" type="number" step="0.5"></div>
+        <div>
+          <label class="f">Vest frequency</label>
+          <select id="g_freq">
+            <option value="1">Monthly</option>
+            <option value="3">Quarterly</option>
+            <option value="6">Semi-annual</option>
+            <option value="12">Annual</option>
+          </select>
+        </div>
+        <div>
+          <label class="f">Preset</label>
+          <select id="g_preset">
+            <option value="">— pick a SpaceX preset —</option>
+            <option value="rsu3">RSU: 3yr, 1yr cliff, annual</option>
+            <option value="rsu5">RSU: 5yr, 1yr cliff, semi-annual</option>
+            <option value="nso6">NSO: 6yr, 2yr cliff, monthly</option>
+          </select>
+        </div>
       </div>
     </div>
     <div class="row" style="margin-top:16px; justify-content:space-between">
@@ -414,7 +421,7 @@
 
 <script>
 "use strict";
-const APP_VERSION = 'v1.0.0-2026.06.12';
+const APP_VERSION = 'v1.1.0-2026.06.12';
 
 /* ---------------- Defaults & state ---------------- */
 const DEFAULT_ASSUME = {
@@ -477,8 +484,10 @@ function monthsBetween(a, b){
   return (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth()) + (b.getDate()>=a.getDate()?0:-1);
 }
 function isOption(t){ return t==='ISO' || t==='NSO'; }
+function isOwned(t){ return t==='OWNED'; }
 
 function vestedFraction(g, asOf=new Date()){
+  if(isOwned(g.type)) return 1;            // owned shares are fully held
   const start = new Date(g.date+'T00:00:00');
   if(isNaN(start)) return 0;
   const totalM = Math.max(1, (g.vy||0)*12);
@@ -493,6 +502,7 @@ function vestedFraction(g, asOf=new Date()){
   return eff/totalM;
 }
 function nextVestDate(g){
+  if(isOwned(g.type)) return null;
   const start = new Date(g.date+'T00:00:00');
   if(isNaN(start)) return null;
   const totalM=(g.vy||0)*12, cliffM=(g.cliff||0)*12, freqM=Math.max(1,g.freq||1);
@@ -513,11 +523,17 @@ function grantValue(g, p, useVested=true){
     const intrinsic = Math.max(0, p - (g.strike||0));
     return { gross: sh*p, exCost: sh*(g.strike||0), net: sh*intrinsic, shares: sh, taxable: sh*intrinsic };
   }
+  // RSU / ESPP / OWNED: shares held outright (no exercise cost)
   return { gross: sh*p, exCost: 0, net: sh*p, shares: sh, taxable: sh*p };
 }
 function estTax(g, p, useVested=true){
   const a = state.assume;
   const sh = (g.shares||0) * (useVested ? vestedFraction(g) : 1);
+  if(g.type==='OWNED'){
+    // Already-acquired shares: only the gain over cost basis is taxed (cap gains).
+    const gain = Math.max(0, p-(g.basis||0))*sh;
+    return { ordinary:0, cg: gain*(a.cgRate/100), amt:0, amtBase:0 };
+  }
   if(g.type==='RSU' || g.type==='ESPP'){
     return { ordinary: sh*p*(a.ordRate/100), cg:0, amt:0, amtBase:0 };
   }
@@ -617,15 +633,18 @@ function renderHoldings(){
   if(!state.grants.length){ el.innerHTML = emptyGrants(); $('#holdingsTotals').innerHTML=''; return; }
   const p = currentPrice();
   el.innerHTML = state.grants.map(g=>{
-    const vf = vestedFraction(g)*100; const v=grantValue(g,p,true);
+    const owned=isOwned(g.type); const vf = vestedFraction(g)*100; const v=grantValue(g,p,true);
+    const sub = isOption(g.type) ? fmtNum(g.shares)+' opts @'+fmtUSD(g.strike,2)
+              : owned ? fmtNum(g.shares)+' sh'+(g.basis?' @ '+fmtUSD(g.basis,2)+' basis':'')
+              : fmtNum(g.shares)+' sh';
     return `<div class="stat" style="margin-bottom:10px; cursor:pointer" onclick="editGrant('${g.id}')">
       <div class="row" style="justify-content:space-between">
-        <div><b>${esc(g.label||g.type)}</b> <span class="tag ${g.type.toLowerCase()}">${g.type}</span></div>
-        <div class="muted small">${fmtNum(g.shares)} ${isOption(g.type)?'opts @'+fmtUSD(g.strike,2):'sh'}</div>
+        <div><b>${esc(g.label||(owned?'Owned shares':g.type))}</b> <span class="tag ${g.type.toLowerCase()}">${owned?'OWNED':g.type}</span></div>
+        <div class="muted small">${sub}</div>
       </div>
       <div class="bar" style="margin:8px 0"><span style="width:${vf.toFixed(1)}%"></span></div>
       <div class="row small muted" style="justify-content:space-between">
-        <span>${vf.toFixed(0)}% vested</span><span>Net now: <b style="color:var(--text)">${fmtBig(v.net)}</b></span>
+        <span>${owned?'held outright':vf.toFixed(0)+'% vested'}</span><span>Net now: <b style="color:var(--text)">${fmtBig(v.net)}</b></span>
       </div></div>`;
   }).join('');
   const pf=portfolio(p,true), pfa=portfolio(p,false);
@@ -681,8 +700,10 @@ function renderVesting(){
     statCard('Unvested', fmtNum(totalSh-vestedSh)+' sh', fmtBig(pfa.net-pf.net)+' net')
   ].join('');
   const el=$('#vestList');
+  const vesting = state.grants.filter(g=>!isOwned(g.type));
   if(!state.grants.length){ el.innerHTML=emptyGrants(); return; }
-  el.innerHTML = state.grants.map(g=>{
+  if(!vesting.length){ el.innerHTML='<p class="muted small">No grants with a vesting schedule. Owned shares are held outright (100% vested).</p>'; return; }
+  el.innerHTML = vesting.map(g=>{
     const vf=vestedFraction(g)*100; const nd=nextVestDate(g);
     const sharesPer = (g.shares||0)*Math.max(1,g.freq||1)/Math.max(1,(g.vy||1)*12);
     return `<div class="stat" style="margin-bottom:10px">
@@ -703,7 +724,7 @@ function renderTaxes(){
   let ord=0,cg=0,amtBase=0;
   const rows = state.grants.map(g=>{
     const t=estTax(g,p,true); ord+=t.ordinary; cg+=t.cg; amtBase+=t.amtBase;
-    const treat = g.type==='ISO'?'LT cap gains + AMT' : (isOption(g.type)?'Ordinary (spread)':'Ordinary (FMV)');
+    const treat = g.type==='OWNED'?'Cap gains (over basis)' : g.type==='ISO'?'LT cap gains + AMT' : (isOption(g.type)?'Ordinary (spread)':'Ordinary (FMV)');
     return `<tr><td>${esc(g.label||g.type)} <span class="tag ${g.type.toLowerCase()}">${g.type}</span></td>
       <td class="small muted">${treat}</td><td class="num">${fmtBig(t.ordinary)}</td><td class="num">${fmtBig(t.cg)}</td></tr>`;
   }).join('');
@@ -796,30 +817,46 @@ function openGrantModal(){ $('#grantModal').classList.add('open'); }
 function closeGrantModal(){ $('#grantModal').classList.remove('open'); }
 function newId(){ return 'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 
-$('#addGrantBtn').onclick = ()=>{
-  $('#grantModalTitle').textContent='Add grant';
-  $('#g_id').value=''; $('#g_label').value=''; $('#g_type').value='RSU';
-  $('#g_shares').value=''; $('#g_strike').value=''; $('#g_date').value=state.assume.ipoDate;
+function resetGrantForm(){
+  $('#g_id').value=''; $('#g_label').value=''; $('#g_shares').value='';
+  $('#g_strike').value=''; $('#g_basis').value=''; $('#g_date').value=state.assume.ipoDate;
   $('#g_vy').value=4; $('#g_cliff').value=1; $('#g_freq').value=12; $('#g_preset').value='';
   $('#deleteGrantBtn').style.visibility='hidden';
-  toggleStrike(); openGrantModal();
+}
+$('#addGrantBtn').onclick = ()=>{
+  $('#grantModalTitle').textContent='Add grant';
+  resetGrantForm(); $('#g_type').value='RSU';
+  toggleGrantFields(); openGrantModal(); $('#g_label').focus();
+};
+$('#quickAddBtn').onclick = ()=>{
+  $('#grantModalTitle').textContent='Add owned shares';
+  resetGrantForm(); $('#g_type').value='OWNED';
+  toggleGrantFields(); openGrantModal(); $('#g_shares').focus();
 };
 window.editGrant = (id)=>{
   const g=state.grants.find(x=>x.id===id); if(!g) return;
-  $('#grantModalTitle').textContent='Edit grant';
+  $('#grantModalTitle').textContent = isOwned(g.type)?'Edit owned shares':'Edit grant';
   $('#g_id').value=g.id; $('#g_label').value=g.label||''; $('#g_type').value=g.type;
-  $('#g_shares').value=g.shares; $('#g_strike').value=g.strike||''; $('#g_date').value=g.date;
+  $('#g_shares').value=g.shares; $('#g_strike').value=g.strike||''; $('#g_basis').value=g.basis||'';
+  $('#g_date').value=g.date;
   $('#g_vy').value=g.vy; $('#g_cliff').value=g.cliff; $('#g_freq').value=g.freq; $('#g_preset').value='';
   $('#deleteGrantBtn').style.visibility='visible';
-  toggleStrike(); openGrantModal();
+  toggleGrantFields(); openGrantModal();
 };
-$('#g_type').onchange = toggleStrike;
-function toggleStrike(){ $('#g_strikeWrap').style.display = isOption($('#g_type').value)?'block':'none'; }
+$('#g_type').onchange = toggleGrantFields;
+function toggleGrantFields(){
+  const t=$('#g_type').value, owned=isOwned(t);
+  $('#g_strikeWrap').style.display = isOption(t)?'block':'none';
+  $('#g_basisWrap').style.display = owned?'block':'none';
+  $('#g_vestWrap').style.display = owned?'none':'contents';
+  $('#g_sharesLbl').textContent = isOption(t)?'# Options':'# Shares';
+  $('#g_dateLbl').textContent = owned?'Acquired date (optional)':'Grant date';
+}
 $('#g_preset').onchange = (e)=>{
   const v=e.target.value; const map={
     rsu3:{type:'RSU',vy:3,cliff:1,freq:12}, rsu5:{type:'RSU',vy:5,cliff:1,freq:6}, nso6:{type:'NSO',vy:6,cliff:2,freq:1}
   }[v];
-  if(map){ $('#g_type').value=map.type; $('#g_vy').value=map.vy; $('#g_cliff').value=map.cliff; $('#g_freq').value=map.freq; toggleStrike(); }
+  if(map){ $('#g_type').value=map.type; $('#g_vy').value=map.vy; $('#g_cliff').value=map.cliff; $('#g_freq').value=map.freq; toggleGrantFields(); }
 };
 $('#cancelGrantBtn').onclick=closeGrantModal;
 $('#grantModal').addEventListener('click',e=>{ if(e.target===$('#grantModal')) closeGrantModal(); });
@@ -827,10 +864,14 @@ $('#saveGrantBtn').onclick = ()=>{
   const shares=parseFloat($('#g_shares').value);
   if(!shares || shares<=0){ toast('Enter a share/option count'); return; }
   const id=$('#g_id').value || newId();
-  const g={ id, label:$('#g_label').value.trim(), type:$('#g_type').value, shares,
-    strike: isOption($('#g_type').value)?(parseFloat($('#g_strike').value)||0):0,
-    date:$('#g_date').value||state.assume.ipoDate, vy:parseFloat($('#g_vy').value)||4,
-    cliff:parseFloat($('#g_cliff').value)||0, freq:parseInt($('#g_freq').value)||12, preSplit:false };
+  const type=$('#g_type').value, owned=isOwned(type);
+  const g={ id, label:$('#g_label').value.trim(), type, shares,
+    strike: isOption(type)?(parseFloat($('#g_strike').value)||0):0,
+    basis: owned?(parseFloat($('#g_basis').value)||0):0,
+    date:$('#g_date').value||state.assume.ipoDate,
+    vy: owned?0:(parseFloat($('#g_vy').value)||4),
+    cliff: owned?0:(parseFloat($('#g_cliff').value)||0),
+    freq: owned?1:(parseInt($('#g_freq').value)||12), preSplit:false };
   const i=state.grants.findIndex(x=>x.id===id);
   if(i>=0) state.grants[i]=g; else state.grants.push(g);
   LS.set('grants', state.grants); closeGrantModal(); renderAll(); toast('Saved');
