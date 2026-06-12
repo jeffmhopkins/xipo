@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0c14" />
+<meta name="description" content="Track your SpaceX equity, model net proceeds, and watch the SPCX listing." />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="SPCX IPO" />
+<title>SpaceX IPO Tracker</title>
+<link rel="manifest" href="./manifest.webmanifest" />
+<style>
+  :root {
+    --bg: #0a0c14;
+    --bg2: #11141f;
+    --card: #161a28;
+    --card2: #1d2233;
+    --line: #2a3146;
+    --text: #eef1fa;
+    --muted: #9aa4bf;
+    --accent: #2f7bff;
+    --accent2: #5b9dff;
+    --green: #2ecc71;
+    --red: #ff5a6a;
+    --amber: #ffb347;
+    --radius: 14px;
+    --shadow: 0 6px 24px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: radial-gradient(1200px 800px at 80% -10%, #14203b 0%, var(--bg) 55%) fixed;
+    color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding-bottom: env(safe-area-inset-bottom);
+    overflow-x: hidden;
+  }
+  a { color: var(--accent2); }
+  h1,h2,h3 { margin: 0 0 .4em; line-height: 1.2; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 14px 120px; }
+
+  /* Header */
+  header.app {
+    position: sticky; top: 0; z-index: 30;
+    backdrop-filter: blur(12px);
+    background: rgba(10,12,20,.78);
+    border-bottom: 1px solid var(--line);
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+  }
+  header.app .inner { max-width: 760px; margin: 0 auto; display:flex; align-items:center; gap:10px; }
+  .logo { width: 30px; height: 30px; flex:0 0 auto; }
+  header.app h1 { font-size: 17px; margin: 0; letter-spacing:.3px; }
+  header.app .sub { font-size: 11.5px; color: var(--muted); }
+  .spcx-pill { margin-left:auto; display:flex; align-items:center; gap:8px; }
+  .ticker {
+    font-variant-numeric: tabular-nums; font-weight:700; font-size: 14px;
+    background: var(--card2); border:1px solid var(--line); padding:5px 10px; border-radius: 999px;
+    display:flex; gap:7px; align-items:center; cursor:pointer; white-space:nowrap;
+  }
+  .ticker .sym { color: var(--muted); font-weight:600; }
+  .up { color: var(--green); } .down { color: var(--red); } .flat{ color: var(--muted); }
+  .dot { width:7px;height:7px;border-radius:50%; background: var(--muted); }
+  .dot.live { background: var(--green); box-shadow:0 0 0 0 rgba(46,204,113,.6); animation: pulse 2s infinite; }
+  .dot.stale { background: var(--amber); }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(46,204,113,.5)} 70%{box-shadow:0 0 0 7px rgba(46,204,113,0)} 100%{box-shadow:0 0 0 0 rgba(46,204,113,0)} }
+
+  /* Tabs */
+  nav.tabs {
+    position: sticky; top: 0; z-index: 20;
+    display:flex; gap:4px; overflow-x:auto; scrollbar-width:none;
+    padding: 8px 0; margin: 4px 0 14px; -webkit-overflow-scrolling:touch;
+  }
+  nav.tabs::-webkit-scrollbar { display:none; }
+  nav.tabs button {
+    flex:0 0 auto; border:1px solid var(--line); background: var(--card);
+    color: var(--muted); padding: 8px 14px; border-radius: 999px; font-size: 13.5px;
+    font-weight:600; cursor:pointer; transition: .15s;
+  }
+  nav.tabs button.active { background: var(--accent); color:#fff; border-color: var(--accent); }
+
+  /* Cards */
+  .card { background: var(--card); border:1px solid var(--line); border-radius: var(--radius); padding:16px; margin-bottom:14px; box-shadow: var(--shadow); }
+  .card h2 { font-size: 15px; color: var(--muted); text-transform: uppercase; letter-spacing:.6px; font-weight:700; }
+  .grid { display:grid; gap:12px; }
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .grid.three { grid-template-columns: repeat(3,1fr); }
+  @media (max-width:520px){ .grid.three{ grid-template-columns:1fr 1fr; } }
+
+  .stat { background: var(--card2); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .stat .label { font-size: 11.5px; color: var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .stat .val { font-size: 22px; font-weight:800; font-variant-numeric: tabular-nums; margin-top:4px; }
+  .stat .val.big { font-size: 27px; }
+  .stat .hint { font-size:11.5px; color:var(--muted); margin-top:3px; }
+
+  /* Forms */
+  label.f { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; font-weight:600; }
+  input, select {
+    width:100%; background: var(--bg2); border:1px solid var(--line); color:var(--text);
+    border-radius:10px; padding:10px 12px; font-size:15px; font-family:inherit;
+  }
+  input:focus, select:focus { outline:none; border-color: var(--accent); }
+  input[type=range]{ padding:0; accent-color: var(--accent); }
+  .btn { background: var(--accent); color:#fff; border:none; border-radius:10px; padding:11px 16px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn.sec { background: var(--card2); border:1px solid var(--line); color:var(--text); }
+  .btn.danger { background: transparent; border:1px solid var(--red); color:var(--red); }
+  .btn.sm { padding:7px 11px; font-size:12.5px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .row.end { justify-content:flex-end; }
+
+  #dashBreakdown, #taxTable, #tenderTable, #scenTable { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  table { width:100%; border-collapse:collapse; font-size:13.5px; }
+  th,td { text-align:right; padding:9px 8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  td.num, th.num { font-variant-numeric: tabular-nums; }
+
+  .muted { color: var(--muted); }
+  .small { font-size:12px; }
+  .tag { display:inline-block; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:6px; background:var(--card2); border:1px solid var(--line); color:var(--muted); letter-spacing:.4px; }
+  .tag.rsu{ color:#7fd1ff;border-color:#27506e;} .tag.iso{ color:#9b8cff;border-color:#403a6e;} .tag.nso{ color:#ffc46b;border-color:#6e5a2a;} .tag.espp{ color:#7fffd4;border-color:#2a6e5a;}
+
+  .bar { height:8px; background: var(--bg2); border-radius:999px; overflow:hidden; }
+  .bar > span { display:block; height:100%; background: linear-gradient(90deg,var(--accent),var(--accent2)); }
+
+  .countdown { display:flex; gap:10px; }
+  .cd { flex:1; text-align:center; background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:12px 6px; }
+  .cd b { display:block; font-size:24px; font-variant-numeric:tabular-nums; font-weight:800; }
+  .cd span { font-size:10.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+
+  /* Modal */
+  .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.6); backdrop-filter:blur(3px); z-index:100; display:none; align-items:flex-end; justify-content:center; }
+  .modal-bg.open { display:flex; }
+  .modal { background:var(--bg2); border:1px solid var(--line); border-radius:18px 18px 0 0; width:100%; max-width:760px; max-height:92vh; overflow:auto; padding:18px 16px calc(20px + env(safe-area-inset-bottom)); box-shadow:var(--shadow); }
+  @media (min-width:560px){ .modal-bg{align-items:center;} .modal{ border-radius:18px; } }
+  .modal h2 { font-size:18px; text-transform:none; letter-spacing:0; color:var(--text); }
+
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(20px + env(safe-area-inset-bottom)); background:var(--card2); border:1px solid var(--line); color:var(--text); padding:12px 16px; border-radius:12px; box-shadow:var(--shadow); z-index:200; display:none; max-width:90vw; }
+  .toast.show { display:block; animation: rise .25s ease; }
+  @keyframes rise { from{opacity:0; transform:translate(-50%,12px);} to{opacity:1;} }
+
+  .update-banner { position:fixed; left:0; right:0; bottom:0; z-index:150; background:var(--accent); color:#fff; padding:12px 14px calc(12px + env(safe-area-inset-bottom)); display:none; align-items:center; gap:12px; justify-content:center; flex-wrap:wrap; }
+  .update-banner.show { display:flex; }
+  .update-banner button { background:#fff; color:var(--accent); border:none; padding:8px 14px; border-radius:8px; font-weight:700; cursor:pointer; }
+
+  .disclaimer { font-size:11.5px; color:var(--muted); border:1px dashed var(--line); border-radius:10px; padding:10px 12px; }
+  .badge-src { font-size:10.5px; color:var(--muted); }
+  .hide { display:none !important; }
+  .empty { text-align:center; color:var(--muted); padding:24px 8px; }
+  ul.tight { margin:6px 0; padding-left:18px; } ul.tight li{ margin:3px 0; }
+</style>
+</head>
+<body>
+
+<header class="app">
+  <div class="inner">
+    <svg class="logo" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="22" fill="#11141f"/><path d="M28 28 L72 72 M72 28 L28 72" stroke="#f5f7ff" stroke-width="11" stroke-linecap="round"/><rect x="30" y="80" width="40" height="6" rx="3" fill="#2f7bff"/></svg>
+    <div>
+      <h1>SpaceX IPO Tracker</h1>
+      <div class="sub">Employee equity &amp; SPCX watch</div>
+    </div>
+    <div class="spcx-pill">
+      <div class="ticker" id="hdrTicker" title="Live SPCX quote — tap to refresh">
+        <span class="dot" id="hdrDot"></span>
+        <span class="sym">SPCX</span>
+        <span id="hdrPrice">—</span>
+        <span id="hdrChg" class="flat"></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav class="tabs" id="tabs">
+    <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="holdings">Holdings</button>
+    <button data-tab="whatif">What-If</button>
+    <button data-tab="vesting">Vesting</button>
+    <button data-tab="taxes">Taxes</button>
+    <button data-tab="market">Market</button>
+    <button data-tab="assumptions">Assumptions</button>
+    <button data-tab="about">About</button>
+  </nav>
+
+  <!-- DASHBOARD -->
+  <section data-panel="dashboard">
+    <div class="card">
+      <h2>Liquidity countdown</h2>
+      <div id="countdownArea"></div>
+    </div>
+    <div class="grid three" id="dashStats"></div>
+    <div class="card">
+      <h2>Your position at <span id="dashPriceLabel"></span></h2>
+      <div id="dashBreakdown"></div>
+      <p class="disclaimer" style="margin-top:12px">Estimates only — not financial or tax advice. SpaceX equity terms are not publicly standardized; all figures derive from your inputs and editable assumptions.</p>
+    </div>
+  </section>
+
+  <!-- HOLDINGS -->
+  <section data-panel="holdings" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Your grants</h2>
+        <button class="btn sm" id="addGrantBtn">+ Add grant</button>
+      </div>
+      <div id="grantList" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h2>Quick totals</h2>
+      <div id="holdingsTotals"></div>
+    </div>
+  </section>
+
+  <!-- WHAT-IF -->
+  <section data-panel="whatif" hidden>
+    <div class="card">
+      <h2>What's it worth at…?</h2>
+      <div class="row" style="gap:14px">
+        <label class="row" style="gap:6px"><input type="radio" name="wiMode" value="price" checked style="width:auto"> By share price</label>
+        <label class="row" style="gap:6px"><input type="radio" name="wiMode" value="val" style="width:auto"> By company valuation</label>
+      </div>
+      <div id="wiPriceCtl">
+        <label class="f">Hypothetical share price: <b id="wiPriceVal" style="color:var(--text)"></b></label>
+        <input type="range" id="wiPrice" min="0" max="600" step="1">
+        <div class="row" style="justify-content:space-between" class="small muted"><span class="small muted">$0</span><span class="small muted">$600</span></div>
+      </div>
+      <div id="wiValCtl" class="hide">
+        <label class="f">Hypothetical valuation: <b id="wiValVal" style="color:var(--text)"></b></label>
+        <input type="range" id="wiVal" min="0" max="4000" step="10">
+        <div class="small muted">Implied price = valuation ÷ shares outstanding (<span id="wiSharesOut"></span>)</div>
+      </div>
+      <div class="grid three" id="wiStats" style="margin-top:14px"></div>
+      <div class="row" style="margin-top:12px">
+        <input id="scenName" placeholder="Scenario name (e.g. IPO day)" style="flex:1">
+        <button class="btn sm" id="saveScenBtn">Save scenario</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Scenario comparison</h2>
+      <div id="scenTable"></div>
+      <div class="row end" style="margin-top:10px"><button class="btn sec sm" id="exportCsvBtn">Export CSV</button></div>
+    </div>
+  </section>
+
+  <!-- VESTING -->
+  <section data-panel="vesting" hidden>
+    <div class="grid two" id="vestSummary"></div>
+    <div class="card">
+      <h2>Vesting by grant</h2>
+      <div id="vestList"></div>
+    </div>
+  </section>
+
+  <!-- TAXES -->
+  <section data-panel="taxes" hidden>
+    <div class="card">
+      <h2>Estimated tax — at <span id="taxPriceLabel"></span></h2>
+      <p class="small muted" style="margin-top:0">Simplified model. RSU/NSO spread is taxed as ordinary income; ISO assumes a qualifying disposition (long-term cap gains) and shows the AMT bargain element separately. Adjust rates in Assumptions.</p>
+      <div id="taxTable"></div>
+    </div>
+    <div class="card">
+      <h2>ISO AMT exposure</h2>
+      <div id="amtArea"></div>
+    </div>
+  </section>
+
+  <!-- MARKET -->
+  <section data-panel="market" hidden>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Live market</h2>
+        <button class="btn sm sec" id="refreshMktBtn">↻ Refresh</button>
+      </div>
+      <div id="mktList" style="margin-top:12px"></div>
+      <div class="small muted" id="mktUpdated" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <h2>Data source</h2>
+      <label class="f">Live-data mode</label>
+      <select id="dataMode">
+        <option value="auto">Auto — public proxy (keyless), then Finnhub key</option>
+        <option value="finnhub">Finnhub key only (most reliable)</option>
+        <option value="off">Off — manual entry only</option>
+      </select>
+      <label class="f">Finnhub API key (optional — stored only in this browser)</label>
+      <input id="finnhubKey" placeholder="paste free key from finnhub.io" autocomplete="off">
+      <p class="small muted">Public mode pulls quotes from Yahoo Finance via free CORS proxies — no key or signup, but proxies can be flaky. A free Finnhub key is the reliable option. SPCX shows the live listing once it trades; until then it reads "not trading yet."</p>
+      <div class="row"><button class="btn sm" id="saveDataBtn">Save</button> <span class="small muted" id="dataSaved"></span></div>
+    </div>
+    <div class="card">
+      <h2>Tender / valuation history <span class="tag">seed</span></h2>
+      <div id="tenderTable"></div>
+      <p class="small muted">Seed figures from public reporting (post-2026 5-for-1 split context). Editable defaults — verify before relying on them.</p>
+    </div>
+  </section>
+
+  <!-- ASSUMPTIONS -->
+  <section data-panel="assumptions" hidden>
+    <div class="card">
+      <h2>Editable assumptions</h2>
+      <p class="small muted" style="margin-top:0">Nothing here is hardcoded into calculations — every value is yours to change. Pre-filled with public-reporting defaults.</p>
+      <div class="grid two">
+        <div><label class="f">Current SPCX price ($)</label><input id="a_price" type="number" step="0.01"></div>
+        <div><label class="f">Shares outstanding</label><input id="a_shares" type="number" step="1"></div>
+        <div><label class="f">Implied valuation ($)</label><input id="a_val" type="number" step="1000000" readonly></div>
+        <div><label class="f">Split factor applied to grants</label><input id="a_split" type="number" step="0.01"></div>
+        <div><label class="f">IPO / first-trade date</label><input id="a_ipo" type="date"></div>
+        <div><label class="f">Lock-up period (days)</label><input id="a_lockup" type="number" step="1"></div>
+        <div><label class="f">Ordinary income rate (%)</label><input id="a_ord" type="number" step="0.1"></div>
+        <div><label class="f">Long-term cap-gains rate (%)</label><input id="a_cg" type="number" step="0.1"></div>
+        <div><label class="f">AMT rate (%)</label><input id="a_amt" type="number" step="0.1"></div>
+        <div><label class="f">AMT exemption ($)</label><input id="a_amtex" type="number" step="100"></div>
+      </div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="saveAssumeBtn">Save assumptions</button>
+        <button class="btn sec" id="resetAssumeBtn">Reset to defaults</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Data management</h2>
+      <div class="row">
+        <button class="btn sec sm" id="exportAllBtn">Export my data (JSON)</button>
+        <button class="btn sec sm" id="importAllBtn">Import data</button>
+        <button class="btn danger sm" id="wipeBtn">Erase everything</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json" class="hide">
+      <p class="small muted">All data stays on this device (localStorage). Nothing is sent to any server except the market-quote requests you trigger.</p>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section data-panel="about" hidden>
+    <div class="card">
+      <h2>About &amp; install</h2>
+      <p>A private, offline-first tracker for SpaceX employees to model equity value and watch the <b>SPCX</b> listing. Works fully offline once loaded; your data never leaves this device.</p>
+      <p><b>Install:</b> in Chrome/Edge use the install icon in the address bar (or menu → Install). On iOS Safari: Share → Add to Home Screen.</p>
+      <ul class="tight small">
+        <li>Version: <b id="aboutVer">—</b> · SW: <b id="aboutSw">checking…</b></li>
+        <li id="updRow">Checking for updates…</li>
+      </ul>
+      <div class="row"><button class="btn sec sm" id="checkUpdBtn">Check for updates</button></div>
+    </div>
+    <div class="card">
+      <h2>How the numbers work</h2>
+      <ul class="tight small">
+        <li><b>Option net value</b> = vested options × max(price − strike, 0)</li>
+        <li><b>RSU value</b> = vested shares × price</li>
+        <li><b>Net proceeds</b> = gross − exercise cost − estimated tax</li>
+        <li><b>Valuation → price</b> = valuation ÷ shares outstanding</li>
+        <li><b>Vesting</b> = stepped tranches after the cliff, per your schedule</li>
+      </ul>
+      <p class="disclaimer">Not affiliated with SpaceX. Estimates only; not financial, legal, or tax advice. Consult a qualified advisor. All public figures (valuation, share count, prices) are third-party reported and may be inaccurate — treat them as editable defaults.</p>
+    </div>
+  </section>
+</div>
+
+<!-- Grant modal -->
+<div class="modal-bg" id="grantModal">
+  <div class="modal">
+    <h2 id="grantModalTitle">Add grant</h2>
+    <input type="hidden" id="g_id">
+    <label class="f">Label</label>
+    <input id="g_label" placeholder="e.g. 2023 new-hire grant">
+    <div class="grid two">
+      <div>
+        <label class="f">Type</label>
+        <select id="g_type">
+          <option value="RSU">RSU</option>
+          <option value="ISO">ISO (incentive option)</option>
+          <option value="NSO">NSO (non-qual option)</option>
+          <option value="ESPP">ESPP shares</option>
+        </select>
+      </div>
+      <div><label class="f"># Shares / options</label><input id="g_shares" type="number" step="1" inputmode="numeric"></div>
+      <div id="g_strikeWrap"><label class="f">Strike price ($)</label><input id="g_strike" type="number" step="0.0001"></div>
+      <div><label class="f">Grant date</label><input id="g_date" type="date"></div>
+      <div><label class="f">Vesting length (years)</label><input id="g_vy" type="number" step="0.5"></div>
+      <div><label class="f">Cliff (years)</label><input id="g_cliff" type="number" step="0.5"></div>
+      <div>
+        <label class="f">Vest frequency</label>
+        <select id="g_freq">
+          <option value="1">Monthly</option>
+          <option value="3">Quarterly</option>
+          <option value="6">Semi-annual</option>
+          <option value="12">Annual</option>
+        </select>
+      </div>
+      <div>
+        <label class="f">Preset</label>
+        <select id="g_preset">
+          <option value="">— pick a SpaceX preset —</option>
+          <option value="rsu3">RSU: 3yr, 1yr cliff, annual</option>
+          <option value="rsu5">RSU: 5yr, 1yr cliff, semi-annual</option>
+          <option value="nso6">NSO: 6yr, 2yr cliff, monthly</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px; justify-content:space-between">
+      <button class="btn danger sm" id="deleteGrantBtn">Delete</button>
+      <div class="row">
+        <button class="btn sec" id="cancelGrantBtn">Cancel</button>
+        <button class="btn" id="saveGrantBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="update-banner" id="updateBanner">
+  <span>A new version is available.</span>
+  <button id="reloadUpdate">Reload to update</button>
+  <button id="dismissUpdate" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.5)">Later</button>
+</div>
+
+<script>
+"use strict";
+const APP_VERSION = 'v1.0.0-2026.06.12';
+
+/* ---------------- Defaults & state ---------------- */
+const DEFAULT_ASSUME = {
+  price: 135,            // post-split IPO price (reported)
+  shares: 13100000000,   // ~13.1B shares outstanding (reported)
+  split: 5,              // 5-for-1 split May 2026
+  ipoDate: '2026-06-12',
+  lockupDays: 180,
+  ordRate: 50,           // blended fed+CA+NIIT (editable)
+  cgRate: 23.8,          // LT cap gains + NIIT
+  amtRate: 28,
+  amtExempt: 85700
+};
+const TENDERS = [
+  { date: '2025-07', price: 212/5, val: 4.0e11, note: 'tender (pre-split, ÷5 shown)' },
+  { date: '2025-12', price: 421/5, val: 8.0e11, note: 'tender (pre-split, ÷5 shown)' },
+  { date: '2026-06', price: 135,   val: 1.77e12, note: 'IPO price (post-split)' }
+];
+const MARKET_SYMBOLS = [
+  { sym: 'SPCX', name: 'SpaceX', primary: true },
+  { sym: 'RKLB', name: 'Rocket Lab' },
+  { sym: 'ASTS', name: 'AST SpaceMobile' },
+  { sym: 'LUNR', name: 'Intuitive Machines' },
+  { sym: 'SPY',  name: 'S&P 500 ETF' }
+];
+
+const LS = {
+  get(k, d){ try { const v = localStorage.getItem('spcx.'+k); return v==null?d:JSON.parse(v); } catch { return d; } },
+  set(k, v){ try { localStorage.setItem('spcx.'+k, JSON.stringify(v)); } catch {} },
+  del(k){ try { localStorage.removeItem('spcx.'+k); } catch {} }
+};
+
+let state = {
+  grants: LS.get('grants', []),
+  assume: Object.assign({}, DEFAULT_ASSUME, LS.get('assume', {})),
+  scenarios: LS.get('scenarios', []),
+  settings: Object.assign({ dataMode:'auto', finnhubKey:'' }, LS.get('settings', {})),
+  quotes: LS.get('quotes', {}),
+  wi: { mode:'price', price: null, val: null }
+};
+
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+
+/* ---------------- Formatting ---------------- */
+const fmtUSD = (n, dp=0) => (n==null||isNaN(n)) ? '—' : (n<0?'-':'') + '$' + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:dp,maximumFractionDigits:dp});
+const fmtNum = (n) => (n==null||isNaN(n)) ? '—' : Math.round(n).toLocaleString('en-US');
+function fmtBig(n){
+  if(n==null||isNaN(n)) return '—';
+  const a = Math.abs(n);
+  if(a>=1e12) return '$'+(n/1e12).toFixed(2)+'T';
+  if(a>=1e9)  return '$'+(n/1e9).toFixed(1)+'B';
+  if(a>=1e6)  return '$'+(n/1e6).toFixed(1)+'M';
+  return fmtUSD(n);
+}
+const pct = (n,dp=1)=> (n==null||isNaN(n))?'—':(n>=0?'+':'')+n.toFixed(dp)+'%';
+
+/* ---------------- Equity math ---------------- */
+function monthsBetween(a, b){
+  return (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth()) + (b.getDate()>=a.getDate()?0:-1);
+}
+function isOption(t){ return t==='ISO' || t==='NSO'; }
+
+function vestedFraction(g, asOf=new Date()){
+  const start = new Date(g.date+'T00:00:00');
+  if(isNaN(start)) return 0;
+  const totalM = Math.max(1, (g.vy||0)*12);
+  const cliffM = (g.cliff||0)*12;
+  const freqM  = Math.max(1, g.freq||1);
+  const elapsed = monthsBetween(start, asOf);
+  if(elapsed <= 0) return 0;
+  if(elapsed < cliffM) return 0;
+  if(elapsed >= totalM) return 1;
+  const stepped = Math.floor(elapsed/freqM)*freqM;
+  const eff = Math.max(cliffM, Math.min(totalM, stepped));
+  return eff/totalM;
+}
+function nextVestDate(g){
+  const start = new Date(g.date+'T00:00:00');
+  if(isNaN(start)) return null;
+  const totalM=(g.vy||0)*12, cliffM=(g.cliff||0)*12, freqM=Math.max(1,g.freq||1);
+  const elapsed = monthsBetween(start, new Date());
+  if(elapsed >= totalM) return null;
+  let next = elapsed < cliffM ? cliffM : (Math.floor(elapsed/freqM)+1)*freqM;
+  next = Math.min(next, totalM);
+  const d = new Date(start); d.setMonth(d.getMonth()+next);
+  return d;
+}
+// adjusted share count (split factor)
+function adjShares(g){ return (g.shares||0) * (state.assume.split && g.preSplit ? 1/state.assume.split : 1); }
+
+// value of a grant's vested portion at price p (gross sale value & exercise cost)
+function grantValue(g, p, useVested=true){
+  const sh = (g.shares||0) * (useVested ? vestedFraction(g) : 1);
+  if(isOption(g.type)){
+    const intrinsic = Math.max(0, p - (g.strike||0));
+    return { gross: sh*p, exCost: sh*(g.strike||0), net: sh*intrinsic, shares: sh, taxable: sh*intrinsic };
+  }
+  return { gross: sh*p, exCost: 0, net: sh*p, shares: sh, taxable: sh*p };
+}
+function estTax(g, p, useVested=true){
+  const a = state.assume;
+  const sh = (g.shares||0) * (useVested ? vestedFraction(g) : 1);
+  if(g.type==='RSU' || g.type==='ESPP'){
+    return { ordinary: sh*p*(a.ordRate/100), cg:0, amt:0, amtBase:0 };
+  }
+  if(g.type==='NSO'){
+    const spread = Math.max(0, p-(g.strike||0))*sh;
+    return { ordinary: spread*(a.ordRate/100), cg:0, amt:0, amtBase:0 };
+  }
+  // ISO: qualifying => LT cap gains on (p-strike); AMT bargain element flagged
+  const spread = Math.max(0, p-(g.strike||0))*sh;
+  return { ordinary:0, cg: spread*(a.cgRate/100), amt:0, amtBase: spread };
+}
+
+function portfolio(p, useVested=true){
+  let gross=0, exCost=0, net=0, ord=0, cg=0, amtBase=0, shares=0;
+  for(const g of state.grants){
+    const v = grantValue(g, p, useVested); const t = estTax(g, p, useVested);
+    gross+=v.gross; exCost+=v.exCost; net+=v.net; shares+=v.shares;
+    ord+=t.ordinary; cg+=t.cg; amtBase+=t.amtBase;
+  }
+  const tax = ord + cg;
+  return { gross, exCost, net, shares, ord, cg, amtBase, tax, afterTax: net - tax };
+}
+
+/* ---------------- Rendering ---------------- */
+function currentPrice(){
+  const q = state.quotes['SPCX'];
+  if(q && q.price>0) return q.price;
+  return state.assume.price;
+}
+
+function renderDashboard(){
+  const p = currentPrice();
+  $('#dashPriceLabel').textContent = fmtUSD(p,2) + (state.quotes['SPCX']&&state.quotes['SPCX'].price>0?' (live)':' (assumed)');
+  const pf = portfolio(p, true);
+  const pfAll = portfolio(p, false);
+  $('#dashStats').innerHTML = [
+    statCard('Vested net value', fmtBig(pf.net), 'at '+fmtUSD(p,2)+'/sh', true),
+    statCard('After-tax (est.)', fmtBig(pf.afterTax), '− '+fmtBig(pf.tax)+' tax'),
+    statCard('Fully-vested value', fmtBig(pfAll.net), 'if 100% vested'),
+    statCard('Exercise cost', fmtBig(pf.exCost), 'to exercise vested options'),
+    statCard('Total shares (vested)', fmtNum(pf.shares), 'across '+state.grants.length+' grant(s)'),
+    statCard('SPCX price', fmtUSD(p,2), srcLabel())
+  ].join('');
+  // breakdown table
+  if(!state.grants.length){
+    $('#dashBreakdown').innerHTML = emptyGrants();
+  } else {
+    let rows = state.grants.map(g=>{
+      const v=grantValue(g,p,true);
+      return `<tr><td>${esc(g.label||g.type)} <span class="tag ${g.type.toLowerCase()}">${g.type}</span></td>
+        <td class="num">${fmtNum(v.shares)}</td><td class="num">${fmtBig(v.gross)}</td>
+        <td class="num">${fmtBig(v.exCost)}</td><td class="num">${fmtBig(v.net)}</td></tr>`;
+    }).join('');
+    $('#dashBreakdown').innerHTML = `<table><thead><tr><th>Grant</th><th class="num">Vested sh</th><th class="num">Gross</th><th class="num">Ex. cost</th><th class="num">Net</th></tr></thead><tbody>${rows}
+      <tr style="font-weight:800"><td>Total</td><td class="num">${fmtNum(pf.shares)}</td><td class="num">${fmtBig(pf.gross)}</td><td class="num">${fmtBig(pf.exCost)}</td><td class="num">${fmtBig(pf.net)}</td></tr></tbody></table>`;
+  }
+  renderCountdown();
+}
+function statCard(label,val,hint,big){ return `<div class="stat"><div class="label">${label}</div><div class="val ${big?'big':''}">${val}</div><div class="hint">${hint||''}</div></div>`; }
+function srcLabel(){
+  const q = state.quotes['SPCX'];
+  if(q && q.price>0) return (q.stale?'stale · ':'live · ')+(q.source||'')+' '+timeAgo(q.t);
+  return 'assumed (not trading)';
+}
+function emptyGrants(){ return `<div class="empty">No grants yet.<br><button class="btn sm" onclick="document.querySelector('[data-tab=holdings]').click()" style="margin-top:10px">Add your equity →</button></div>`; }
+
+function renderCountdown(){
+  const a = state.assume;
+  const ipo = a.ipoDate ? new Date(a.ipoDate+'T13:30:00') : null;
+  const now = new Date();
+  let el = $('#countdownArea');
+  if(!ipo){ el.innerHTML = '<p class="muted small">Set an IPO date in Assumptions.</p>'; return; }
+  if(now < ipo){
+    el.innerHTML = `<p class="small muted" style="margin:0 0 8px">Time to SPCX first trade (${a.ipoDate})</p>` + cdBlocks(ipo - now);
+  } else {
+    const lock = new Date(ipo); lock.setDate(lock.getDate()+(a.lockupDays||0));
+    if(now < lock){
+      el.innerHTML = `<p class="small" style="margin:0 0 8px"><span class="up">● SPCX is trading.</span> Lock-up ends in:</p>` + cdBlocks(lock - now)
+        + `<p class="small muted" style="margin-top:8px">Lock-up: ${a.lockupDays} days from ${a.ipoDate}. Employees typically can't sell until it expires.</p>`;
+    } else {
+      el.innerHTML = `<p class="small up" style="margin:0">● SPCX trading · lock-up expired — vested shares may be sellable (verify your plan rules).</p>`;
+    }
+  }
+}
+function cdBlocks(ms){
+  const s=Math.max(0,Math.floor(ms/1000));
+  const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60), sec=s%60;
+  return `<div class="countdown">
+    <div class="cd"><b>${d}</b><span>days</span></div>
+    <div class="cd"><b>${h}</b><span>hours</span></div>
+    <div class="cd"><b>${m}</b><span>min</span></div>
+    <div class="cd"><b>${sec}</b><span>sec</span></div></div>`;
+}
+
+function renderHoldings(){
+  const el = $('#grantList');
+  if(!state.grants.length){ el.innerHTML = emptyGrants(); $('#holdingsTotals').innerHTML=''; return; }
+  const p = currentPrice();
+  el.innerHTML = state.grants.map(g=>{
+    const vf = vestedFraction(g)*100; const v=grantValue(g,p,true);
+    return `<div class="stat" style="margin-bottom:10px; cursor:pointer" onclick="editGrant('${g.id}')">
+      <div class="row" style="justify-content:space-between">
+        <div><b>${esc(g.label||g.type)}</b> <span class="tag ${g.type.toLowerCase()}">${g.type}</span></div>
+        <div class="muted small">${fmtNum(g.shares)} ${isOption(g.type)?'opts @'+fmtUSD(g.strike,2):'sh'}</div>
+      </div>
+      <div class="bar" style="margin:8px 0"><span style="width:${vf.toFixed(1)}%"></span></div>
+      <div class="row small muted" style="justify-content:space-between">
+        <span>${vf.toFixed(0)}% vested</span><span>Net now: <b style="color:var(--text)">${fmtBig(v.net)}</b></span>
+      </div></div>`;
+  }).join('');
+  const pf=portfolio(p,true), pfa=portfolio(p,false);
+  $('#holdingsTotals').innerHTML = `<div class="grid three">
+    ${statCard('Vested net', fmtBig(pf.net),'')}
+    ${statCard('Unvested net', fmtBig(pfa.net-pf.net),'')}
+    ${statCard('Total net', fmtBig(pfa.net),'')}</div>`;
+}
+
+function renderWhatIf(){
+  const a = state.assume;
+  if(state.wi.price==null) state.wi.price = Math.round(currentPrice());
+  if(state.wi.val==null) state.wi.val = Math.round(a.shares*currentPrice()/1e9); // in $B
+  const priceCtl=$('#wiPrice'), valCtl=$('#wiVal');
+  priceCtl.max = Math.max(600, Math.round(currentPrice()*3));
+  priceCtl.value = state.wi.price; valCtl.value = state.wi.val;
+  $('#wiSharesOut').textContent = fmtNum(a.shares);
+  updateWhatIf();
+}
+function effectivePrice(){
+  if(state.wi.mode==='val'){ return state.assume.shares>0 ? (state.wi.val*1e9)/state.assume.shares : 0; }
+  return state.wi.price;
+}
+function updateWhatIf(){
+  const p = effectivePrice();
+  $('#wiPriceVal').textContent = fmtUSD(state.wi.price,0);
+  $('#wiValVal').textContent = fmtBig(state.wi.val*1e9) + ' → ' + fmtUSD(p,2)+'/sh';
+  const pf = portfolio(p, true);
+  $('#wiStats').innerHTML = [
+    statCard('Gross', fmtBig(pf.gross),'vested shares × price'),
+    statCard('Net proceeds', fmtBig(pf.net), '− '+fmtBig(pf.exCost)+' exercise', true),
+    statCard('After-tax', fmtBig(pf.afterTax), '− '+fmtBig(pf.tax)+' est. tax')
+  ].join('');
+}
+function renderScenarios(){
+  const el = $('#scenTable');
+  if(!state.scenarios.length){ el.innerHTML = '<p class="muted small">No saved scenarios. Set a price and "Save scenario".</p>'; return; }
+  const rows = state.scenarios.map((s,i)=>{
+    const pf = portfolio(s.price, true);
+    return `<tr><td>${esc(s.name)}</td><td class="num">${fmtUSD(s.price,0)}</td><td class="num">${fmtBig(pf.net)}</td><td class="num">${fmtBig(pf.afterTax)}</td>
+      <td><button class="btn danger sm" onclick="delScen(${i})">✕</button></td></tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr><th>Scenario</th><th class="num">Price</th><th class="num">Net</th><th class="num">After-tax</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderVesting(){
+  const p = currentPrice();
+  const pf=portfolio(p,true), pfa=portfolio(p,false);
+  const totalSh = state.grants.reduce((s,g)=>s+(g.shares||0),0);
+  const vestedSh = pf.shares;
+  $('#vestSummary').innerHTML = [
+    statCard('Vested', fmtNum(vestedSh)+' sh', totalSh? (100*vestedSh/totalSh).toFixed(0)+'% of total':'', true),
+    statCard('Unvested', fmtNum(totalSh-vestedSh)+' sh', fmtBig(pfa.net-pf.net)+' net')
+  ].join('');
+  const el=$('#vestList');
+  if(!state.grants.length){ el.innerHTML=emptyGrants(); return; }
+  el.innerHTML = state.grants.map(g=>{
+    const vf=vestedFraction(g)*100; const nd=nextVestDate(g);
+    const sharesPer = (g.shares||0)*Math.max(1,g.freq||1)/Math.max(1,(g.vy||1)*12);
+    return `<div class="stat" style="margin-bottom:10px">
+      <div class="row" style="justify-content:space-between"><b>${esc(g.label||g.type)}</b><span class="muted small">${g.vy}yr · ${g.cliff}yr cliff · ${freqName(g.freq)}</span></div>
+      <div class="bar" style="margin:8px 0"><span style="width:${vf.toFixed(1)}%"></span></div>
+      <div class="row small muted" style="justify-content:space-between">
+        <span>${vf.toFixed(0)}% vested</span>
+        <span>${nd? 'Next: '+nd.toLocaleDateString()+' (~'+fmtNum(sharesPer)+' sh)' : 'Fully vested'}</span>
+      </div></div>`;
+  }).join('');
+}
+function freqName(f){ return {1:'monthly',3:'quarterly',6:'semi-annual',12:'annual'}[f]||'monthly'; }
+
+function renderTaxes(){
+  const p = currentPrice();
+  $('#taxPriceLabel').textContent = fmtUSD(p,2);
+  if(!state.grants.length){ $('#taxTable').innerHTML=emptyGrants(); $('#amtArea').innerHTML=''; return; }
+  let ord=0,cg=0,amtBase=0;
+  const rows = state.grants.map(g=>{
+    const t=estTax(g,p,true); ord+=t.ordinary; cg+=t.cg; amtBase+=t.amtBase;
+    const treat = g.type==='ISO'?'LT cap gains + AMT' : (isOption(g.type)?'Ordinary (spread)':'Ordinary (FMV)');
+    return `<tr><td>${esc(g.label||g.type)} <span class="tag ${g.type.toLowerCase()}">${g.type}</span></td>
+      <td class="small muted">${treat}</td><td class="num">${fmtBig(t.ordinary)}</td><td class="num">${fmtBig(t.cg)}</td></tr>`;
+  }).join('');
+  $('#taxTable').innerHTML = `<table><thead><tr><th>Grant</th><th>Treatment</th><th class="num">Ordinary tax</th><th class="num">Cap-gains tax</th></tr></thead><tbody>${rows}
+    <tr style="font-weight:800"><td colspan=2>Total est. tax</td><td class="num">${fmtBig(ord)}</td><td class="num">${fmtBig(cg)}</td></tr></tbody></table>
+    <p class="small muted" style="margin-top:8px">Combined estimated tax: <b style="color:var(--text)">${fmtBig(ord+cg)}</b> at rates ord ${state.assume.ordRate}% / cap-gains ${state.assume.cgRate}%.</p>`;
+  // AMT
+  const a=state.assume;
+  const amtTaxable = Math.max(0, amtBase - a.amtExempt);
+  const amt = amtTaxable*(a.amtRate/100);
+  $('#amtArea').innerHTML = amtBase>0
+    ? `<div class="grid three">
+        ${statCard('ISO bargain element', fmtBig(amtBase),'(price − strike) × vested ISOs')}
+        ${statCard('Over AMT exemption', fmtBig(amtTaxable), 'exemption '+fmtBig(a.amtExempt))}
+        ${statCard('Rough AMT', fmtBig(amt), '@ '+a.amtRate+'% (very approximate)')}</div>
+       <p class="small muted">AMT is owed in the year you <i>exercise &amp; hold</i> ISOs, separate from sale. This is a rough flag, not a full AMT calc (no regular-tax comparison, phase-outs, or credits).</p>`
+    : '<p class="muted small">No ISOs — no AMT bargain element. Add ISO grants to see AMT exposure.</p>';
+}
+
+function renderMarket(){
+  const el=$('#mktList');
+  el.innerHTML = MARKET_SYMBOLS.map(m=>{
+    const q=state.quotes[m.sym];
+    let right;
+    if(q && q.price>0){
+      const cls = q.chg>0?'up':q.chg<0?'down':'flat';
+      right = `<div style="text-align:right"><div style="font-weight:700">${fmtUSD(q.price,2)}</div><div class="small ${cls}">${pct(q.chgPct)} ${q.stale?'· stale':''}</div></div>`;
+    } else if(m.primary){
+      right = `<div class="small muted">not trading yet</div>`;
+    } else {
+      right = `<div class="small muted">—</div>`;
+    }
+    return `<div class="stat" style="margin-bottom:8px"><div class="row" style="justify-content:space-between">
+      <div><b>${m.sym}</b> ${m.primary?'<span class="tag">SpaceX</span>':''}<div class="small muted">${m.name}</div></div>${right}</div></div>`;
+  }).join('');
+  const last = Object.values(state.quotes).map(q=>q&&q.t).filter(Boolean).sort().pop();
+  $('#mktUpdated').textContent = last ? 'Last updated '+timeAgo(last)+' · source: '+(state.quotes['SPCX']?.source||'—') : 'No quotes fetched yet.';
+  // tender table
+  $('#tenderTable').innerHTML = `<table><thead><tr><th>Date</th><th class="num">Price/sh</th><th class="num">Valuation</th><th>Note</th></tr></thead><tbody>${
+    TENDERS.map(t=>`<tr><td>${t.date}</td><td class="num">${fmtUSD(t.price,2)}</td><td class="num">${fmtBig(t.val)}</td><td class="small muted">${t.note}</td></tr>`).join('')
+  }</tbody></table>`;
+}
+
+function renderHeaderTicker(){
+  const q=state.quotes['SPCX'];
+  const dot=$('#hdrDot');
+  if(q && q.price>0){
+    $('#hdrPrice').textContent = fmtUSD(q.price,2);
+    const cls=q.chg>0?'up':q.chg<0?'down':'flat';
+    $('#hdrChg').className=cls; $('#hdrChg').textContent=pct(q.chgPct);
+    dot.className = 'dot ' + (q.stale?'stale':'live');
+  } else {
+    $('#hdrPrice').textContent = fmtUSD(state.assume.price,0);
+    $('#hdrChg').className='flat'; $('#hdrChg').textContent='est';
+    dot.className='dot';
+  }
+}
+
+function renderAssumptions(){
+  const a=state.assume;
+  $('#a_price').value=a.price; $('#a_shares').value=a.shares; $('#a_split').value=a.split;
+  $('#a_ipo').value=a.ipoDate; $('#a_lockup').value=a.lockupDays;
+  $('#a_ord').value=a.ordRate; $('#a_cg').value=a.cgRate; $('#a_amt').value=a.amtRate; $('#a_amtex').value=a.amtExempt;
+  $('#a_val').value=Math.round(a.price*a.shares);
+}
+
+function renderAll(){
+  renderHeaderTicker();
+  const tab = currentTab();
+  ({ dashboard:renderDashboard, holdings:renderHoldings, whatif:()=>{renderWhatIf();renderScenarios();},
+     vesting:renderVesting, taxes:renderTaxes, market:renderMarket, assumptions:renderAssumptions,
+     about:renderAbout }[tab]||(()=>{}))();
+}
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function timeAgo(t){ if(!t) return ''; const s=Math.floor((Date.now()-t)/1000); if(s<60)return s+'s ago'; if(s<3600)return Math.floor(s/60)+'m ago'; if(s<86400)return Math.floor(s/3600)+'h ago'; return Math.floor(s/86400)+'d ago'; }
+
+/* ---------------- Tabs ---------------- */
+function currentTab(){ return ($('nav.tabs button.active')||{}).dataset?.tab || 'dashboard'; }
+$('#tabs').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  $$('nav.tabs button').forEach(x=>x.classList.toggle('active', x===b));
+  $$('section[data-panel]').forEach(s=>s.hidden = s.dataset.panel!==b.dataset.tab);
+  window.scrollTo({top:0});
+  renderAll();
+});
+
+/* ---------------- Grant modal ---------------- */
+function openGrantModal(){ $('#grantModal').classList.add('open'); }
+function closeGrantModal(){ $('#grantModal').classList.remove('open'); }
+function newId(){ return 'g'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+
+$('#addGrantBtn').onclick = ()=>{
+  $('#grantModalTitle').textContent='Add grant';
+  $('#g_id').value=''; $('#g_label').value=''; $('#g_type').value='RSU';
+  $('#g_shares').value=''; $('#g_strike').value=''; $('#g_date').value=state.assume.ipoDate;
+  $('#g_vy').value=4; $('#g_cliff').value=1; $('#g_freq').value=12; $('#g_preset').value='';
+  $('#deleteGrantBtn').style.visibility='hidden';
+  toggleStrike(); openGrantModal();
+};
+window.editGrant = (id)=>{
+  const g=state.grants.find(x=>x.id===id); if(!g) return;
+  $('#grantModalTitle').textContent='Edit grant';
+  $('#g_id').value=g.id; $('#g_label').value=g.label||''; $('#g_type').value=g.type;
+  $('#g_shares').value=g.shares; $('#g_strike').value=g.strike||''; $('#g_date').value=g.date;
+  $('#g_vy').value=g.vy; $('#g_cliff').value=g.cliff; $('#g_freq').value=g.freq; $('#g_preset').value='';
+  $('#deleteGrantBtn').style.visibility='visible';
+  toggleStrike(); openGrantModal();
+};
+$('#g_type').onchange = toggleStrike;
+function toggleStrike(){ $('#g_strikeWrap').style.display = isOption($('#g_type').value)?'block':'none'; }
+$('#g_preset').onchange = (e)=>{
+  const v=e.target.value; const map={
+    rsu3:{type:'RSU',vy:3,cliff:1,freq:12}, rsu5:{type:'RSU',vy:5,cliff:1,freq:6}, nso6:{type:'NSO',vy:6,cliff:2,freq:1}
+  }[v];
+  if(map){ $('#g_type').value=map.type; $('#g_vy').value=map.vy; $('#g_cliff').value=map.cliff; $('#g_freq').value=map.freq; toggleStrike(); }
+};
+$('#cancelGrantBtn').onclick=closeGrantModal;
+$('#grantModal').addEventListener('click',e=>{ if(e.target===$('#grantModal')) closeGrantModal(); });
+$('#saveGrantBtn').onclick = ()=>{
+  const shares=parseFloat($('#g_shares').value);
+  if(!shares || shares<=0){ toast('Enter a share/option count'); return; }
+  const id=$('#g_id').value || newId();
+  const g={ id, label:$('#g_label').value.trim(), type:$('#g_type').value, shares,
+    strike: isOption($('#g_type').value)?(parseFloat($('#g_strike').value)||0):0,
+    date:$('#g_date').value||state.assume.ipoDate, vy:parseFloat($('#g_vy').value)||4,
+    cliff:parseFloat($('#g_cliff').value)||0, freq:parseInt($('#g_freq').value)||12, preSplit:false };
+  const i=state.grants.findIndex(x=>x.id===id);
+  if(i>=0) state.grants[i]=g; else state.grants.push(g);
+  LS.set('grants', state.grants); closeGrantModal(); renderAll(); toast('Saved');
+};
+$('#deleteGrantBtn').onclick = ()=>{
+  const id=$('#g_id').value; state.grants=state.grants.filter(x=>x.id!==id);
+  LS.set('grants', state.grants); closeGrantModal(); renderAll(); toast('Deleted');
+};
+
+/* ---------------- What-if controls ---------------- */
+$$('input[name=wiMode]').forEach(r=>r.onchange=()=>{
+  state.wi.mode=r.value;
+  $('#wiPriceCtl').classList.toggle('hide', r.value!=='price');
+  $('#wiValCtl').classList.toggle('hide', r.value!=='val');
+  updateWhatIf();
+});
+$('#wiPrice').oninput = e=>{ state.wi.price=+e.target.value; updateWhatIf(); };
+$('#wiVal').oninput = e=>{ state.wi.val=+e.target.value; updateWhatIf(); };
+$('#saveScenBtn').onclick = ()=>{
+  const name=$('#scenName').value.trim()||('@'+fmtUSD(effectivePrice(),0));
+  state.scenarios.push({ name, price: Math.round(effectivePrice()*100)/100 });
+  LS.set('scenarios', state.scenarios); $('#scenName').value=''; renderScenarios(); toast('Scenario saved');
+};
+window.delScen = (i)=>{ state.scenarios.splice(i,1); LS.set('scenarios',state.scenarios); renderScenarios(); };
+$('#exportCsvBtn').onclick = ()=>{
+  const p=currentPrice();
+  let csv='Grant,Type,Shares,Strike,Vested%,NetNow,GrossNow\n';
+  for(const g of state.grants){ const v=grantValue(g,p,true);
+    csv+=`"${(g.label||g.type)}",${g.type},${g.shares},${g.strike||0},${(vestedFraction(g)*100).toFixed(1)},${Math.round(v.net)},${Math.round(v.gross)}\n`; }
+  csv+='\nScenario,Price,Net,AfterTax\n';
+  for(const s of state.scenarios){ const pf=portfolio(s.price,true); csv+=`"${s.name}",${s.price},${Math.round(pf.net)},${Math.round(pf.afterTax)}\n`; }
+  download('spacex-ipo-export.csv', csv, 'text/csv');
+};
+
+/* ---------------- Assumptions ---------------- */
+$('#a_price').addEventListener('input', ()=>{ $('#a_val').value=Math.round((+$('#a_price').value||0)*(+$('#a_shares').value||0)); });
+$('#a_shares').addEventListener('input', ()=>{ $('#a_val').value=Math.round((+$('#a_price').value||0)*(+$('#a_shares').value||0)); });
+$('#saveAssumeBtn').onclick = ()=>{
+  state.assume = { price:+$('#a_price').value||0, shares:+$('#a_shares').value||0, split:+$('#a_split').value||1,
+    ipoDate:$('#a_ipo').value, lockupDays:+$('#a_lockup').value||0, ordRate:+$('#a_ord').value||0,
+    cgRate:+$('#a_cg').value||0, amtRate:+$('#a_amt').value||0, amtExempt:+$('#a_amtex').value||0 };
+  LS.set('assume', state.assume); state.wi.price=null; state.wi.val=null; renderAll(); toast('Assumptions saved');
+};
+$('#resetAssumeBtn').onclick = ()=>{ if(confirm('Reset all assumptions to reported defaults?')){ state.assume=Object.assign({},DEFAULT_ASSUME); LS.set('assume',state.assume); renderAssumptions(); renderAll(); toast('Reset'); } };
+$('#exportAllBtn').onclick = ()=> download('spacex-ipo-backup.json', JSON.stringify({grants:state.grants,assume:state.assume,scenarios:state.scenarios},null,2),'application/json');
+$('#importAllBtn').onclick = ()=> $('#importFile').click();
+$('#importFile').onchange = (e)=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const d=JSON.parse(r.result); if(d.grants)state.grants=d.grants; if(d.assume)state.assume=Object.assign({},DEFAULT_ASSUME,d.assume); if(d.scenarios)state.scenarios=d.scenarios; LS.set('grants',state.grants);LS.set('assume',state.assume);LS.set('scenarios',state.scenarios); renderAll(); renderAssumptions(); toast('Imported'); }catch{ toast('Invalid file'); } }; r.readAsText(f); };
+$('#wipeBtn').onclick = ()=>{ if(confirm('Erase ALL your data on this device? Cannot be undone.')){ ['grants','assume','scenarios','settings','quotes'].forEach(LS.del); location.reload(); } };
+
+/* ---------------- Market data (tiered) ---------------- */
+const YQ = s => `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(s)}`;
+const PROXIES = [
+  { name:'allorigins', url:s=>`https://api.allorigins.win/get?url=${encodeURIComponent(YQ(s))}`, parse: async r=>{ const w=await r.json(); return JSON.parse(w.contents); } },
+  { name:'codetabs', url:s=>`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(YQ(s))}`, parse: r=>r.json() }
+];
+async function fetchTimeout(url, ms=8000, opts={}){
+  const c=new AbortController(); const t=setTimeout(()=>c.abort(), ms);
+  try { return await fetch(url, {...opts, signal:c.signal}); } finally { clearTimeout(t); }
+}
+function parseYahoo(data, sym){
+  const m = data?.chart?.result?.[0]?.meta;
+  if(!m || m.regularMarketPrice==null) throw new Error('no price');
+  const prev = m.chartPreviousClose ?? m.previousClose ?? m.regularMarketPrice;
+  return { sym, price:m.regularMarketPrice, prev, chg:m.regularMarketPrice-prev, chgPct: prev? (m.regularMarketPrice-prev)/prev*100:0, t:Date.now(), source:'Yahoo' };
+}
+async function viaProxies(sym){
+  for(const px of PROXIES){
+    try { const r=await fetchTimeout(px.url(sym)); if(!r.ok) continue; const d=await px.parse(r); return parseYahoo(d, sym); }
+    catch(_){ /* try next */ }
+  }
+  throw new Error('all proxies failed');
+}
+async function viaFinnhub(sym){
+  const key=state.settings.finnhubKey; if(!key) throw new Error('no key');
+  const r=await fetchTimeout(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${key}`);
+  if(r.status===401) throw new Error('bad key'); if(r.status===429) throw new Error('rate limited'); if(!r.ok) throw new Error('finnhub '+r.status);
+  const q=await r.json(); if(!q.t||q.c===0) throw new Error('no data');
+  return { sym, price:q.c, prev:q.pc, chg:q.d, chgPct:q.dp, t:Date.now(), source:'Finnhub' };
+}
+async function fetchQuote(sym){
+  const mode=state.settings.dataMode;
+  if(mode==='off') throw new Error('off');
+  const order = mode==='finnhub' ? [viaFinnhub] : [viaProxies, viaFinnhub];
+  let lastErr;
+  for(const fn of order){ try { return await fn(sym); } catch(e){ lastErr=e; } }
+  throw lastErr||new Error('failed');
+}
+let refreshing=false;
+async function refreshMarket(showToast){
+  if(state.settings.dataMode==='off'){ if(showToast) toast('Live data is off (enable in Market)'); return; }
+  if(refreshing) return; refreshing=true;
+  const btn=$('#refreshMktBtn'); if(btn) btn.textContent='↻ …';
+  let ok=0, fail=0;
+  await Promise.all(MARKET_SYMBOLS.map(async m=>{
+    try { const q=await fetchQuote(m.sym); state.quotes[m.sym]=q; ok++; }
+    catch(e){ const cached=state.quotes[m.sym]; if(cached){ cached.stale=true; } fail++; }
+  }));
+  LS.set('quotes', state.quotes);
+  refreshing=false; if(btn) btn.textContent='↻ Refresh';
+  renderHeaderTicker(); if(!$('section[data-panel=market]').hidden) renderMarket(); if(currentTab()==='dashboard') renderDashboard();
+  if(showToast) toast(ok? `Updated ${ok} quote(s)`+(fail?` · ${fail} failed`:'') : 'Quotes unavailable — using last-known');
+}
+$('#refreshMktBtn').onclick = ()=>refreshMarket(true);
+$('#hdrTicker').onclick = ()=>refreshMarket(true);
+$('#saveDataBtn').onclick = ()=>{
+  state.settings.dataMode=$('#dataMode').value; state.settings.finnhubKey=$('#finnhubKey').value.trim();
+  LS.set('settings', state.settings); $('#dataSaved').textContent='Saved'; setTimeout(()=>$('#dataSaved').textContent='',1500);
+  refreshMarket(true);
+};
+
+/* ---------------- About / SW ---------------- */
+function renderAbout(){ $('#aboutVer').textContent=APP_VERSION; }
+$('#checkUpdBtn').onclick = async ()=>{
+  if(swReg){ try{ await swReg.update(); toast('Checked for updates'); }catch{ toast('Update check failed'); } }
+  else toast('Service worker not active');
+};
+
+/* ---------------- Misc ---------------- */
+let toastT;
+function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'),2600); }
+function download(name, content, type){ const b=new Blob([content],{type}); const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(u),1000); }
+
+/* ---------------- Init ---------------- */
+function initSettingsUI(){ $('#dataMode').value=state.settings.dataMode; $('#finnhubKey').value=state.settings.finnhubKey; }
+initSettingsUI();
+renderAll();
+renderAssumptions();
+setInterval(()=>{ if(currentTab()==='dashboard') renderCountdown(); }, 1000);
+// auto-refresh quotes periodically while visible
+setInterval(()=>{ if(document.visibilityState==='visible') refreshMarket(false); }, 60000);
+window.addEventListener('online', ()=>refreshMarket(false));
+// initial quote fetch (best-effort)
+setTimeout(()=>refreshMarket(false), 400);
+
+/* ---------------- Service worker registration + update flow ---------------- */
+let swReg=null, sw_refreshing=false;
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(sw_refreshing) return; sw_refreshing=true; location.reload(); });
+  window.addEventListener('load', async ()=>{
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js', { updateViaCache:'none', scope:'./' });
+      swReg = reg;
+      $('#aboutSw').textContent = 'registered';
+      const showWaiting = (w)=>{ if(w) showUpdateBanner(w); };
+      if(reg.waiting && navigator.serviceWorker.controller) showWaiting(reg.waiting);
+      reg.addEventListener('updatefound', ()=>{
+        const nw=reg.installing; if(!nw) return;
+        $('#updRow') && ($('#updRow').textContent='Downloading update…');
+        nw.addEventListener('statechange', ()=>{
+          if(nw.state==='installed'){
+            if(navigator.serviceWorker.controller){ showWaiting(nw); $('#updRow').textContent='Update ready — reload to apply.'; }
+            else { $('#updRow').textContent='Cached for offline use.'; }
+          }
+        });
+      });
+      reg.update().catch(()=>{});
+      document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') reg.update().catch(()=>{}); });
+      $('#updRow') && ($('#updRow').textContent = reg.waiting ? 'Update ready — reload to apply.' : 'Up to date.');
+    } catch(e){ $('#aboutSw').textContent='unavailable'; $('#updRow') && ($('#updRow').textContent='Service worker unavailable (need https/localhost).'); }
+  });
+}
+let waitingWorker=null;
+function showUpdateBanner(worker){ waitingWorker=worker; $('#updateBanner').classList.add('show'); }
+$('#reloadUpdate').onclick = ()=>{ if(waitingWorker) waitingWorker.postMessage({type:'SKIP_WAITING'}); else location.reload(); };
+$('#dismissUpdate').onclick = ()=>$('#updateBanner').classList.remove('show');
+</script>
+</body>
+</html>
