@@ -12,7 +12,7 @@
  *  - We do NOT skipWaiting on install; the page shows a "new version — reload"
  *    prompt and posts SKIP_WAITING when the user accepts.
  */
-const VERSION = 'v1.2.0-2026.06.12';
+const VERSION = 'v1.3.0-2026.06.12';
 const CACHE_NAME = `spcx-ipo-${VERSION}`;
 
 // Files needed for the offline shell. Paths are relative to the SW scope
